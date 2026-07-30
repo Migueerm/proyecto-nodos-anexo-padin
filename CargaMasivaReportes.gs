@@ -1,3 +1,15 @@
+// -------------------- PUNTO DE ENTRADA WEB APP (WEB FORMULARIO) --------------------
+/**
+ * Permite publicar este script como Web App para que los usuarios
+ * carguen archivos desde una URL web independiente, SIN darles acceso a la Planilla.
+ */
+function doGet(e) {
+  return HtmlService.createHtmlOutputFromFile('Dialogo')
+    .setTitle('📤 Carga Masiva de Reportes - TECO')
+    .setXframeOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
 // Helper para buscar índices de columnas de manera insensible a mayúsculas/minúsculas y espacios
 function obtenerIndiceCabecera(cabeceras, nombreEsperado) {
   const normEsperado = nombreEsperado.trim().toUpperCase().replace(/\s+/g, '');
@@ -128,8 +140,8 @@ function protegerHoja(hoja, descripcion) {
 // -------------------- APERTURA DEL DIÁLOGO --------------------
 function mostrarDialogoCarga() {
   const html = HtmlService.createHtmlOutputFromFile('Dialogo')
-    .setWidth(850)
-    .setHeight(680);
+    .setWidth(880)
+    .setHeight(700);
   SpreadsheetApp.getUi().showModalDialog(html, '📤 Carga masiva de reporte');
 }
 
@@ -365,15 +377,13 @@ function insertarEnEstructuraFormOptimizado(datos, userCodes, userDnis, cabecera
     const nodo = idxNodo !== -1 ? (fila[idxNodo] || "") : "";
     const modelo = idxModelo !== -1 ? (fila[idxModelo] || "") : "";
     const piso = (idxPiso !== -1 && fila[idxPiso]) ? " PISO " + fila[idxPiso] : "";
-    const dpto = (idxDpto !== -1 && fila[idxDpto]) ? " DPTO " + fila[idxDpto] : "";
+    const dpto = (idxDpto !== -1 ? (fila[idxDpto] || "") : "");
     const caliFCPE = idxCaliFCPE !== -1 ? (fila[idxCaliFCPE] || "") : "";
     const localidad = idxLocalidad !== -1 ? (fila[idxLocalidad] || "") : "";
     const provincia = idxProvincia !== -1 ? (fila[idxProvincia] || "") : "";
     const ip = idxIp !== -1 ? (fila[idxIp] || "") : "";
     let tipoDomicilio = idxTipoDomicilio !== -1 ? (fila[idxTipoDomicilio] || "") : "";
     const serialEquipo = idxSerialEquipo !== -1 ? (fila[idxSerialEquipo] || "") : "";
-
-    // No ignorar el score "OK" porque puede ser un falso positivo
 
     // Asignar el código de usuario e inyectar el DNI manual correspondientes
     const usuarioLogueado = userCodes[indexReportables] || (userCodes.length > 0 ? userCodes[0] : "Desconocido");

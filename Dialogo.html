@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Carga Masiva de Reportes - TECO</title>
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!-- SheetJS para lectura de Excel/CSV en cliente -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      --card-bg: rgba(30, 41, 59, 0.7);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --accent-blue: #3b82f6;
+      --accent-blue-hover: #2563eb;
+      --accent-cyan: #06b6d4;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --radius-lg: 16px;
+      --radius-md: 10px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    body {
+      background: var(--bg-gradient);
+      color: var(--text-main);
+      min-height: 100vh;
+      padding: 24px 16px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 900px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(16px);
+      border-radius: var(--radius-lg);
+      padding: 28px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .header-title h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      background: linear-gradient(90deg, #60a5fa, #38bdf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header-title p {
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      margin-top: 4px;
+    }
+
+    .badge-secure {
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: #34d399;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Step indicator */
+    .steps-bar {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 28px;
+      position: relative;
+    }
+
+    .step-item {
+      flex: 1;
+      text-align: center;
+      position: relative;
+      z-index: 1;
+    }
+
+    .step-number {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: #1e293b;
+      border: 2px solid #475569;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 8px auto;
+      font-weight: 600;
+      font-size: 0.875rem;
+      transition: all 0.3s ease;
+    }
+
+    .step-item.active .step-number {
+      background: var(--accent-blue);
+      border-color: #60a5fa;
+      color: #fff;
+      box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
+    }
+
+    .step-item.completed .step-number {
+      background: var(--success);
+      border-color: #34d399;
+      color: #fff;
+    }
+
+    .step-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .step-item.active .step-label {
+      color: var(--text-main);
+      font-weight: 600;
+    }
+
+    /* Upload Dropzone */
+    .dropzone {
+      border: 2px dashed rgba(99, 102, 241, 0.4);
+      border-radius: var(--radius-md);
+      padding: 36px 20px;
+      text-align: center;
+      background: rgba(30, 41, 59, 0.4);
+      cursor: pointer;
+      transition: all 0.3s ease;
+      position: relative;
+    }
+
+    .dropzone:hover, .dropzone.dragover {
+      border-color: var(--accent-blue);
+      background: rgba(59, 130, 246, 0.08);
+    }
+
+    .dropzone-icon {
+      font-size: 2.5rem;
+      margin-bottom: 12px;
+    }
+
+    .dropzone-text {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .dropzone-subtext {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    #fileInput {
+      display: none;
+    }
+
+    /* Alerts & Banners */
+    .alert {
+      padding: 14px 18px;
+      border-radius: var(--radius-md);
+      font-size: 0.875rem;
+      margin-top: 20px;
+      display: none;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .alert-danger {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+    }
+
+    .alert-success {
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: #6ee7b7;
+    }
+
+    .alert-info {
+      background: rgba(59, 130, 246, 0.15);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      color: #93c5fd;
+    }
+
+    /* Data Preview & Bulk Inputs Section */
+    .section-preview {
+      display: none;
+      margin-top: 24px;
+    }
+
+    .bulk-inputs-card {
+      background: rgba(30, 41, 59, 0.6);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-md);
+      padding: 18px;
+      margin-bottom: 20px;
+    }
+
+    .bulk-title {
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-bottom: 12px;
+      color: #93c5fd;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: 12px;
+      align-items: end;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .form-group label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .form-control {
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 6px;
+      padding: 10px 14px;
+      color: var(--text-main);
+      font-size: 0.875rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .form-control:focus {
+      border-color: var(--accent-blue);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+      color: white;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+    }
+
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #2563eb, #1e40af);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-main);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+
+    /* Table */
+    .table-container {
+      max-height: 280px;
+      overflow-y: auto;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--card-border);
+      margin-bottom: 24px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+      text-align: left;
+    }
+
+    th {
+      background: rgba(15, 23, 42, 0.95);
+      position: sticky;
+      top: 0;
+      padding: 12px 14px;
+      font-weight: 600;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--card-border);
+      white-space: nowrap;
+    }
+
+    td {
+      padding: 10px 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      color: #e2e8f0;
+      white-space: nowrap;
+    }
+
+    tr:hover {
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .badge-service {
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      font-weight: 600;
+    }
+
+    .badge-hfc { background: rgba(59, 130, 246, 0.2); color: #93c5fd; }
+    .badge-flow { background: rgba(168, 85, 247, 0.2); color: #c084fc; }
+    .badge-ftth { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; }
+
+    /* Actions Footer */
+    .footer-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid var(--card-border);
+    }
+
+    /* Loader Spinner */
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top-color: #fff;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <div class="header-title">
+        <h1>📤 Carga Masiva de Reportes</h1>
+        <p>Sistema seguro de subida y procesamiento unificado para Telecom / Konecta</p>
+      </div>
+      <div class="badge-secure">
+        🔒 Formulario Seguro (Sin acceso directo a la Hoja)
+      </div>
+    </div>
+
+    <!-- Steps Progress Bar -->
+    <div class="steps-bar">
+      <div class="step-item active" id="step1">
+        <div class="step-number">1</div>
+        <div class="step-label">Cargar Archivo</div>
+      </div>
+      <div class="step-item" id="step2">
+        <div class="step-number">2</div>
+        <div class="step-label">Validar Datos</div>
+      </div>
+      <div class="step-item" id="step3">
+        <div class="step-number">3</div>
+        <div class="step-label">Procesar & Guardar</div>
+      </div>
+    </div>
+
+    <!-- Step 1: Dropzone -->
+    <div id="uploadSection">
+      <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+        <div class="dropzone-icon">📁</div>
+        <div class="dropzone-text">Arrastrá tu archivo Excel o CSV acá</div>
+        <div class="dropzone-subtext">Soporta formatos .xlsx, .xls o .csv con reporte de red</div>
+        <input type="file" id="fileInput" accept=".xlsx, .xls, .csv" onchange="manejarArchivo(this.files[0])">
+      </div>
+    </div>
+
+    <!-- Banner de Alertas -->
+    <div id="alertBanner" class="alert">
+      <span id="alertIcon">⚠️</span>
+      <span id="alertMsg"></span>
+    </div>
+
+    <!-- Step 2 & Preview Section -->
+    <div class="section-preview" id="previewSection">
+      <div class="bulk-inputs-card">
+        <div class="bulk-title">
+          <span>✍️</span> Asignación de Datos del Operador
+        </div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="bulkUserCode">Código / Legajo de Usuario</label>
+            <input type="text" id="bulkUserCode" class="form-control" placeholder="Ej: U123456" oninput="aplicarCamposMasivos()">
+          </div>
+          <div class="form-group">
+            <label for="bulkDni">DNI por defecto (Si falta en filas)</label>
+            <input type="text" id="bulkDni" class="form-control" placeholder="Ej: 35123456" oninput="aplicarCamposMasivos()">
+          </div>
+          <div>
+            <button class="btn btn-secondary" type="button" onclick="aplicarCamposMasivos()">Aplicar a Todos</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 10px;">
+        <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted);">
+          Vista previa del lote (<span id="rowCount">0</span> registros)
+        </span>
+        <span id="fileBadge" style="font-size:0.75rem; background:rgba(255,255,255,0.1); padding:4px 8px; border-radius:4px;"></span>
+      </div>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Usuario</th>
+              <th>DNI</th>
+              <th>MAC</th>
+              <th>Nodo (Area Service)</th>
+              <th>Modelo</th>
+              <th>Servicio Mapeado</th>
+              <th>Localidad</th>
+            </tr>
+          </thead>
+          <tbody id="previewTableBody">
+            <!-- Filas dinámicas -->
+          </tbody>
+        </table>
+      </div>
+
+      <div class="footer-actions">
+        <button class="btn btn-secondary" onclick="reiniciarFormulario()">Cancelar / Cambiar Archivo</button>
+        <button class="btn btn-primary" id="btnSubmit" onclick="enviarReporte()">
+          <span id="btnText">🚀 Procesar y Guardar Lote</span>
+          <span id="btnSpinner" class="spinner" style="display:none;"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let datosParsedGlobal = [];
+    let cabeceraGlobal = [];
+    let nombreArchivoGlobal = '';
+
+    // Drag & Drop Handlers
+    const dropzone = document.getElementById('dropzone');
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      if (e.dataTransfer.files.length > 0) {
+        manejarArchivo(e.dataTransfer.files[0]);
+      }
+    });
+
+    function mostrarAlerta(msg, tipo = 'danger') {
+      const banner = document.getElementById('alertBanner');
+      const msgEl = document.getElementById('alertMsg');
+      banner.className = `alert alert-${tipo}`;
+      banner.style.display = 'flex';
+      msgEl.innerText = msg;
+    }
+
+    function ocultarAlerta() {
+      document.getElementById('alertBanner').style.display = 'none';
+    }
+
+    function manejarArchivo(archivo) {
+      if (!archivo) return;
+      nombreArchivoGlobal = archivo.name;
+      ocultarAlerta();
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+          const jsonGrid = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+
+          if (!jsonGrid || jsonGrid.length < 2) {
+            mostrarAlerta('El archivo seleccionado está vacío o no contiene filas válidas.');
+            return;
+          }
+
+          cabeceraGlobal = jsonGrid[0];
+          datosParsedGlobal = jsonGrid;
+
+          // Validar encabezados requeridos en el cliente primero
+          const req = ["MAC", "ABONADO", "ALTURA", "CALLE", "AREA SERVICE", "MODELO", "CALI F_CPE_SCORE", "LOCALIDAD", "PROVINCIA", "IP", "TIP O_DOMIC", "NU M_SERIAL_EQUIPO"];
+          const cabeceraNorm = cabeceraGlobal.map(x => String(x || '').trim().toUpperCase().replace(/\s+/g, ''));
+          const faltantes = [];
+
+          req.forEach(r => {
+            const rNorm = r.trim().toUpperCase().replace(/\s+/g, '');
+            if (!cabeceraNorm.includes(rNorm)) {
+              faltantes.push(r);
+            }
+          });
+
+          if (faltantes.length > 0) {
+            mostrarAlerta(`Faltan las siguientes columnas requeridas en el archivo: ${faltantes.join(', ')}`);
+            return;
+          }
+
+          mostrarVistaPrevia();
+        } catch (err) {
+          mostrarAlerta('Error al leer el archivo. Asegurate de que sea un Excel (.xlsx) o CSV válido.');
+        }
+      };
+      reader.readAsArrayBuffer(archivo);
+    }
+
+    function normalizarIndex(cabecera, nombre) {
+      const target = nombre.trim().toUpperCase().replace(/\s+/g, '');
+      return cabecera.findIndex(c => String(c || '').trim().toUpperCase().replace(/\s+/g, '') === target);
+    }
+
+    function obtenerServicioJs(modelo) {
+      if (!modelo) return '';
+      const m = String(modelo).trim().toUpperCase();
+      const hfc = ["FAST389615","CGA4233TAR","FAST3890V3","CGA4233TCH3","CG3000","DPC3848VET","FAST3686V2","DPC3848VE","FAST3686"];
+      const flow = ["HP4CH","B866V6N","ZXV10","DIW250","HP44","HP40","VSB3918","DIW362UHDV2","DIW360","DCX-4400","DCX-4220"];
+      const ftth = ["HG8145X610","HG8245W58TV2","HG8245U","FAST5657","G1426GD","G240WJ","G2425GB","G240WB","PPV4439B","PRV33AX349B"];
+
+      if (hfc.includes(m)) return { text: 'Internet HFC', class: 'badge-hfc' };
+      if (flow.includes(m)) return { text: 'Flow', class: 'badge-flow' };
+      if (ftth.includes(m)) return { text: 'Internet FTTH', class: 'badge-ftth' };
+      return { text: 'Otro', class: 'badge-hfc' };
+    }
+
+    function mostrarVistaPrevia() {
+      document.getElementById('uploadSection').style.display = 'none';
+      document.getElementById('previewSection').style.display = 'block';
+
+      // Actualizar pasos
+      document.getElementById('step1').classList.remove('active');
+      document.getElementById('step1').classList.add('completed');
+      document.getElementById('step2').classList.add('active');
+
+      document.getElementById('fileBadge').innerText = nombreArchivoGlobal;
+      
+      renderizarTablaPreview();
+    }
+
+    function renderizarTablaPreview() {
+      const tbody = document.getElementById('previewTableBody');
+      tbody.innerHTML = '';
+
+      const idxMac = normalizarIndex(cabeceraGlobal, 'MAC');
+      const idxNodo = normalizarIndex(cabeceraGlobal, 'AREA SERVICE');
+      const idxModelo = normalizarIndex(cabeceraGlobal, 'MODELO');
+      const idxLocalidad = normalizarIndex(cabeceraGlobal, 'LOCALIDAD');
+      const idxDni = normalizarIndex(cabeceraGlobal, 'DNI');
+
+      const userDefault = document.getElementById('bulkUserCode').value || 'Desconocido';
+      const dniDefault = document.getElementById('bulkDni').value || '';
+
+      let filasValidas = 0;
+
+      for (let i = 1; i < datosParsedGlobal.length; i++) {
+        const row = datosParsedGlobal[i];
+        if (!row || row.length === 0 || !row.some(c => c && String(c).trim() !== '')) continue;
+        filasValidas++;
+
+        const mac = idxMac !== -1 ? (row[idxMac] || '') : '';
+        const nodo = idxNodo !== -1 ? (row[idxNodo] || '') : '';
+        const modelo = idxModelo !== -1 ? (row[idxModelo] || '') : '';
+        const localidad = idxLocalidad !== -1 ? (row[idxLocalidad] || '') : '';
+        const dniInFile = idxDni !== -1 ? (row[idxDni] || '') : '';
+
+        const dniFinal = dniDefault || dniInFile || '-';
+        const srv = obtenerServicioJs(modelo);
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${filasValidas}</td>
+          <td><strong style="color:#60a5fa">${userDefault}</strong></td>
+          <td>${dniFinal}</td>
+          <td><code>${mac}</code></td>
+          <td>${nodo}</td>
+          <td>${modelo}</td>
+          <td><span class="badge-service ${srv.class}">${srv.text}</span></td>
+          <td>${localidad}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+
+      document.getElementById('rowCount').innerText = filasValidas;
+    }
+
+    function aplicarCamposMasivos() {
+      renderizarTablaPreview();
+    }
+
+    function reiniciarFormulario() {
+      datosParsedGlobal = [];
+      cabeceraGlobal = [];
+      nombreArchivoGlobal = '';
+
+      document.getElementById('fileInput').value = '';
+      document.getElementById('uploadSection').style.display = 'block';
+      document.getElementById('previewSection').style.display = 'none';
+
+      document.getElementById('step1').className = 'step-item active';
+      document.getElementById('step2').className = 'step-item';
+      document.getElementById('step3').className = 'step-item';
+      ocultarAlerta();
+    }
+
+    function enviarReporte() {
+      const btnSubmit = document.getElementById('btnSubmit');
+      const btnText = document.getElementById('btnText');
+      const btnSpinner = document.getElementById('btnSpinner');
+
+      const userDefault = document.getElementById('bulkUserCode').value.trim() || 'Desconocido';
+      const dniDefault = document.getElementById('bulkDni').value.trim() || '';
+
+      // Filtrar filas datos
+      const datosFiltrados = [];
+      const userCodes = [];
+      const userDnis = [];
+
+      const idxDni = normalizarIndex(cabeceraGlobal, 'DNI');
+
+      for (let i = 1; i < datosParsedGlobal.length; i++) {
+        const row = datosParsedGlobal[i];
+        if (!row || row.length === 0 || !row.some(c => c && String(c).trim() !== '')) continue;
+        
+        datosFiltrados.push(row);
+        userCodes.push(userDefault);
+
+        const dniInFile = idxDni !== -1 ? (row[idxDni] || '') : '';
+        userDnis.push(dniDefault || dniInFile || '');
+      }
+
+      if (datosFiltrados.length === 0) {
+        mostrarAlerta('No hay registros válidos para procesar.');
+        return;
+      }
+
+      // Preparar estructura completa (primer elemento cabecera)
+      const paqueteDatos = [cabeceraGlobal, ...datosFiltrados];
+
+      // UI Spinner
+      btnSubmit.disabled = true;
+      btnText.innerText = 'Procesando y Guardando...';
+      btnSpinner.style.display = 'inline-block';
+      ocultarAlerta();
+
+      // Cambiar paso 3 activo
+      document.getElementById('step2').className = 'step-item completed';
+      document.getElementById('step3').className = 'step-item active';
+
+      // Llamada al servidor Apps Script (o simulador en preview local)
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler((res) => {
+            btnSubmit.disabled = false;
+            btnSpinner.style.display = 'none';
+            btnText.innerText = '🚀 Procesar y Guardar Lote';
+
+            if (res && res.ok) {
+              document.getElementById('step3').className = 'step-item completed';
+              mostrarAlerta(`✅ ¡Lote procesado exitosamente! Se guardaron ${res.filasGuardadas} registros localmente e insertaron en Historico.`, 'success');
+              setTimeout(() => {
+                if (google.script.host && google.script.host.close) {
+                  google.script.host.close();
+                }
+              }, 4000);
+            } else {
+              mostrarAlerta(`❌ Error: ${res ? res.error : 'Ocurrió un fallo indeterminado.'}`, 'danger');
+            }
+          })
+          .withFailureHandler((err) => {
+            btnSubmit.disabled = false;
+            btnSpinner.style.display = 'none';
+            btnText.innerText = '🚀 Procesar y Guardar Lote';
+            mostrarAlerta(`❌ Error en el servidor: ${err.message || err}`, 'danger');
+          })
+          .guardarEnHistorial(paqueteDatos, userCodes, userDnis, nombreArchivoGlobal);
+      } else {
+        // Ejecución en vista previa sin servidor Apps Script activo
+        setTimeout(() => {
+          btnSubmit.disabled = false;
+          btnSpinner.style.display = 'none';
+          btnText.innerText = '🚀 Procesar y Guardar Lote';
+          mostrarAlerta(`✅ (Simulación): Lote de ${datosFiltrados.length} registros procesado correctamente.`, 'success');
+        }, 1500);
+      }
+    }
+  </script>
+</body>
+</html>
