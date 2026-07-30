@@ -401,7 +401,7 @@
         <p>Sistema seguro de subida y procesamiento unificado para Telecom / Konecta</p>
       </div>
       <div class="badge-secure">
-        🔒 Formulario Seguro (Sin acceso directo a la Hoja)
+        🔒 Formulario Seguro (Protección de Planilla)
       </div>
     </div>
 
@@ -535,7 +535,7 @@
           const data = new Uint8Array(e.target.result);
           const workbook = XLSX.read(data, { type: 'array' });
           const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-          const jsonGrid = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+          const jsonGrid = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: "" });
 
           if (!jsonGrid || jsonGrid.length < 2) {
             mostrarAlerta('El archivo seleccionado está vacío o no contiene filas válidas.');
@@ -576,7 +576,7 @@
     }
 
     function obtenerServicioJs(modelo) {
-      if (!modelo) return '';
+      if (!modelo) return { text: 'Sin Modelo', class: 'badge-hfc' };
       const m = String(modelo).trim().toUpperCase();
       const hfc = ["FAST389615","CGA4233TAR","FAST3890V3","CGA4233TCH3","CG3000","DPC3848VET","FAST3686V2","DPC3848VE","FAST3686"];
       const flow = ["HP4CH","B866V6N","ZXV10","DIW250","HP44","HP40","VSB3918","DIW362UHDV2","DIW360","DCX-4400","DCX-4220"];
@@ -585,7 +585,7 @@
       if (hfc.includes(m)) return { text: 'Internet HFC', class: 'badge-hfc' };
       if (flow.includes(m)) return { text: 'Flow', class: 'badge-flow' };
       if (ftth.includes(m)) return { text: 'Internet FTTH', class: 'badge-ftth' };
-      return { text: 'Otro', class: 'badge-hfc' };
+      return { text: 'Desconocido', class: 'badge-hfc' };
     }
 
     function mostrarVistaPrevia() {
@@ -612,14 +612,14 @@
       const idxLocalidad = normalizarIndex(cabeceraGlobal, 'LOCALIDAD');
       const idxDni = normalizarIndex(cabeceraGlobal, 'DNI');
 
-      const userDefault = document.getElementById('bulkUserCode').value || 'Desconocido';
-      const dniDefault = document.getElementById('bulkDni').value || '';
+      const userDefault = document.getElementById('bulkUserCode').value.trim() || 'Desconocido';
+      const dniDefault = document.getElementById('bulkDni').value.trim() || '';
 
       let filasValidas = 0;
 
       for (let i = 1; i < datosParsedGlobal.length; i++) {
         const row = datosParsedGlobal[i];
-        if (!row || row.length === 0 || !row.some(c => c && String(c).trim() !== '')) continue;
+        if (!row || row.length === 0 || !row.some(c => c !== null && c !== undefined && String(c).trim() !== '')) continue;
         filasValidas++;
 
         const mac = idxMac !== -1 ? (row[idxMac] || '') : '';
@@ -684,9 +684,12 @@
 
       for (let i = 1; i < datosParsedGlobal.length; i++) {
         const row = datosParsedGlobal[i];
-        if (!row || row.length === 0 || !row.some(c => c && String(c).trim() !== '')) continue;
+        if (!row || row.length === 0 || !row.some(c => c !== null && c !== undefined && String(c).trim() !== '')) continue;
         
-        datosFiltrados.push(row);
+        // Sanitizar celdas a string para evitar fallos de serialización en google.script.run
+        const rowSanitized = row.map(cell => (cell === null || cell === undefined) ? "" : String(cell));
+        
+        datosFiltrados.push(rowSanitized);
         userCodes.push(userDefault);
 
         const dniInFile = idxDni !== -1 ? (row[idxDni] || '') : '';
@@ -698,8 +701,9 @@
         return;
       }
 
-      // Preparar estructura completa (primer elemento cabecera)
-      const paqueteDatos = [cabeceraGlobal, ...datosFiltrados];
+      // Preparar estructura completa (primer elemento cabecera sanitizada)
+      const cabeceraSanitizada = cabeceraGlobal.map(cell => (cell === null || cell === undefined) ? "" : String(cell));
+      const paqueteDatos = [cabeceraSanitizada, ...datosFiltrados];
 
       // UI Spinner
       btnSubmit.disabled = true;
@@ -721,7 +725,7 @@
 
             if (res && res.ok) {
               document.getElementById('step3').className = 'step-item completed';
-              mostrarAlerta(`✅ ¡Lote procesado exitosamente! Se guardaron ${res.filasGuardadas} registros localmente e insertaron en Historico.`, 'success');
+              mostrarAlerta(`✅ ¡Lote procesado exitosamente! Se guardaron ${res.filasGuardadas} registros en la planilla de forma segura.`, 'success');
               setTimeout(() => {
                 if (google.script.host && google.script.host.close) {
                   google.script.host.close();

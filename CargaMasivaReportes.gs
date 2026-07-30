@@ -1,7 +1,24 @@
+// -------------------- ID DE LA PLANILLA DE TRABAJO --------------------
+// ID de la planilla principal para funcionamiento tanto desde el Sheet como desde la Web App (doGet)
+const SPREADSHEET_ID_LOCAL = '1-TfFDqea0OkGlQrQdls_3NxMqlQrK8HMieGwPWdLvIo';
+
+/**
+ * Helper para obtener la planilla activa.
+ * Si se ejecuta desde el Sheet, usa getActiveSpreadsheet().
+ * Si se ejecuta desde la Web App (doGet), abre la planilla por ID para evitar errores de referencia nula.
+ */
+function getAppSpreadsheet() {
+  try {
+    const ssActive = SpreadsheetApp.getActiveSpreadsheet();
+    if (ssActive) return ssActive;
+  } catch (e) {}
+  return SpreadsheetApp.openById(SPREADSHEET_ID_LOCAL);
+}
+
 // -------------------- PUNTO DE ENTRADA WEB APP (WEB FORMULARIO) --------------------
 /**
  * Permite publicar este script como Web App para que los usuarios
- * carguen archivos desde una URL web independiente, SIN darles acceso a la Planilla.
+ * carguen archivos desde una URL web independiente sin alterar la estructura del Sheet.
  */
 function doGet(e) {
   return HtmlService.createHtmlOutputFromFile('Dialogo')
@@ -12,9 +29,10 @@ function doGet(e) {
 
 // Helper para buscar índices de columnas de manera insensible a mayúsculas/minúsculas y espacios
 function obtenerIndiceCabecera(cabeceras, nombreEsperado) {
+  if (!cabeceras || !Array.isArray(cabeceras)) return -1;
   const normEsperado = nombreEsperado.trim().toUpperCase().replace(/\s+/g, '');
   for (let i = 0; i < cabeceras.length; i++) {
-    const normCabecera = String(cabeceras[i]).trim().toUpperCase().replace(/\s+/g, '');
+    const normCabecera = String(cabeceras[i] || '').trim().toUpperCase().replace(/\s+/g, '');
     if (normCabecera === normEsperado) {
       return i;
     }
@@ -74,15 +92,19 @@ function obtenerServicio(modelo) {
 
 // -------------------- MENÚ Y CONFIGURACIÓN INICIAL --------------------
 function onOpen() {
-  SpreadsheetApp.getUi()
-    .createMenu('📤 Carga de archivos')
-    .addItem('📄 Subir archivo', 'mostrarDialogoCarga')
-    .addToUi();
-  configurarHojas();
+  try {
+    SpreadsheetApp.getUi()
+      .createMenu('📤 Carga de archivos')
+      .addItem('📄 Subir archivo', 'mostrarDialogoCarga')
+      .addToUi();
+    configurarHojas();
+  } catch (e) {
+    Logger.log("onOpen omitido fuera del contenedor de UI: " + e);
+  }
 }
 
 function configurarHojas() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getAppSpreadsheet();
   
   let hist = ss.getSheetByName('Historial');
   if (!hist) hist = ss.insertSheet('Historial');
@@ -126,18 +148,22 @@ function configurarHojas() {
 }
 
 function protegerHoja(hoja, descripcion) {
-  const protecciones = hoja.getProtections(SpreadsheetApp.ProtectionType.SHEET);
-  let proteccion;
-  if (protecciones.length > 0) {
-    proteccion = protecciones[0];
-  } else {
-    proteccion = hoja.protect();
+  try {
+    const protecciones = hoja.getProtections(SpreadsheetApp.ProtectionType.SHEET);
+    let proteccion;
+    if (protecciones.length > 0) {
+      proteccion = protecciones[0];
+    } else {
+      proteccion = hoja.protect();
+    }
+    proteccion.setDescription(descripcion);
+    proteccion.setWarningOnly(true); // Advertencia para evitar bloquear a otros editores
+  } catch (e) {
+    Logger.log("Aviso en protegerHoja: " + e.message);
   }
-  proteccion.setDescription(descripcion);
-  proteccion.setWarningOnly(true); // Advertencia para evitar bloquear a otros editores
 }
 
-// -------------------- APERTURA DEL DIÁLOGO --------------------
+// -------------------- APERTURA DEL DIÁLOGO DENTRO DE SHEETS --------------------
 function mostrarDialogoCarga() {
   const html = HtmlService.createHtmlOutputFromFile('Dialogo')
     .setWidth(880)
@@ -168,10 +194,12 @@ function validarEstructura(datos) {
 
 // -------------------- GUARDADO CON LOCK Y FILTRADO DE FILAS VACÍAS --------------------
 function guardarEnHistorial(datos, userCodes, userDnis, fileName) {
-  const lock = LockService.getDocumentLock();
+  const lock = LockService.getDocumentLock() || LockService.getScriptLock();
   try {
-    if (lock.tryLock(15000)) {
-      const ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (lock.tryLock(30000)) {
+      const ss = getAppSpreadsheet();
+      configurarHojas(); // Asegurar hojas listas
+      
       const hojaHist = ss.getSheetByName('Historial');
       const hojaUltima = ss.getSheetByName('UltimaCarga');
       const hojaReportado = ss.getSheetByName('UltimoReportado');
@@ -181,7 +209,7 @@ function guardarEnHistorial(datos, userCodes, userDnis, fileName) {
 
       let userEmail = '';
       try {
-        userEmail = Session.getActiveUser().getEmail();
+        userEmail = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
       } catch (e) {
         userEmail = 'No disponible';
       }
@@ -191,11 +219,17 @@ function guardarEnHistorial(datos, userCodes, userDnis, fileName) {
       const zona = Session.getScriptTimeZone();
       const fechaHoraStr = Utilities.formatDate(ahora, zona, "d/M/yyyy H:mm:ss");
 
+      // Validar estructura básica
+      if (!datos || datos.length < 2) {
+        return { ok: false, error: 'No hay suficientes filas de datos para procesar.' };
+      }
+
       // Filtrar filas de datos que no estén completamente vacías
       const datosFiltrados = [];
       for (let i = 1; i < datos.length; i++) {
         const fila = datos[i];
-        const tieneAlgo = fila.some(celda => celda && celda.toString().trim() !== "");
+        if (!fila || !Array.isArray(fila)) continue;
+        const tieneAlgo = fila.some(celda => celda !== null && celda !== undefined && celda.toString().trim() !== "");
         if (tieneAlgo) {
           datosFiltrados.push(fila);
         }
@@ -210,7 +244,7 @@ function guardarEnHistorial(datos, userCodes, userDnis, fileName) {
       // Validar cantidad de reportables (todos los registros son reportables)
       let reportablesCount = datosFiltrados.length;
 
-      if (userCodes.length < reportablesCount || userDnis.length < reportablesCount) {
+      if (!userCodes || !userDnis || userCodes.length < reportablesCount || userDnis.length < reportablesCount) {
         return { ok: false, error: `Faltan ingresar datos manuales. Se esperaban ${reportablesCount} registros.` };
       }
 
@@ -251,7 +285,7 @@ function guardarEnHistorial(datos, userCodes, userDnis, fileName) {
           } else {
             const idxInFile = indexMap[hName];
             if (idxInFile !== undefined && idxInFile !== -1) {
-              filaHist.push(fila[idxInFile] || "");
+              filaHist.push(fila[idxInFile] !== undefined && fila[idxInFile] !== null ? fila[idxInFile] : "");
             } else {
               filaHist.push(""); // Dejar en blanco si falta la columna en el excel subido
             }
@@ -276,15 +310,15 @@ function guardarEnHistorial(datos, userCodes, userDnis, fileName) {
       }
 
       // RegistroCargas
-      hojaReg.appendRow([fechaHoraStr, userCodes.join(', '), userEmail, fileName, filasAGuardar.length, 'OK']);
+      hojaReg.appendRow([fechaHoraStr, userCodes.slice(0, 5).join(', ') + (userCodes.length > 5 ? '...' : ''), userEmail, fileName || 'Archivo Cargado', filasAGuardar.length, 'OK']);
 
       // Resumen por Nodo y Estado (usando datosFiltrados)
       const idxNodo = obtenerIndiceCabecera(cabeceraArchivo, "AREA SERVICE");
       const resumenMap = {};
       for (let i = 0; i < datosFiltrados.length; i++) {
         const fila = datosFiltrados[i];
-        const nodo = idxNodo !== -1 ? String(fila[idxNodo]).trim() : "";
-        const estado = idxCaliFCPE !== -1 ? String(fila[idxCaliFCPE]).trim() : "";
+        const nodo = idxNodo !== -1 ? String(fila[idxNodo] || '').trim() : "";
+        const estado = idxCaliFCPE !== -1 ? String(fila[idxCaliFCPE] || '').trim() : "";
         const clave = `${nodo}|||${estado}`;
         resumenMap[clave] = (resumenMap[clave] || 0) + 1;
       }
@@ -334,14 +368,13 @@ function guardarEnHistorial(datos, userCodes, userDnis, fileName) {
   } catch (e) {
     return { ok: false, error: e.toString() };
   } finally {
-    lock.releaseLock();
+    try { lock.releaseLock(); } catch(e) {}
   }
 }
 
 // -------------------- VERSIÓN OPTIMIZADA EXTERNA --------------------
 function insertarEnEstructuraFormOptimizado(datos, userCodes, userDnis, cabeceraArchivo) {
-  const spreadsheetId = '1-TfFDqea0OkGlQrQdls_3NxMqlQrK8HMieGwPWdLvIo';
-  const ssDestino = SpreadsheetApp.openById(spreadsheetId);
+  const ssDestino = SpreadsheetApp.openById(SPREADSHEET_ID_LOCAL);
   const hojaForm = ssDestino.getSheetByName('Historico');
   if (!hojaForm) throw new Error("No se encontró la hoja de destino 'Historico'");
 
@@ -370,6 +403,7 @@ function insertarEnEstructuraFormOptimizado(datos, userCodes, userDnis, cabecera
 
   for (let i = 0; i < datos.length; i++) {
     const fila = datos[i];
+    if (!fila || !Array.isArray(fila)) continue;
     
     const mac = idxMac !== -1 ? (fila[idxMac] || "") : "";
     const altura = idxAltura !== -1 ? (fila[idxAltura] || "") : "";
@@ -377,7 +411,7 @@ function insertarEnEstructuraFormOptimizado(datos, userCodes, userDnis, cabecera
     const nodo = idxNodo !== -1 ? (fila[idxNodo] || "") : "";
     const modelo = idxModelo !== -1 ? (fila[idxModelo] || "") : "";
     const piso = (idxPiso !== -1 && fila[idxPiso]) ? " PISO " + fila[idxPiso] : "";
-    const dpto = (idxDpto !== -1 ? (fila[idxDpto] || "") : "");
+    const dpto = (idxDpto !== -1 && fila[idxDpto]) ? " DPTO " + fila[idxDpto] : "";
     const caliFCPE = idxCaliFCPE !== -1 ? (fila[idxCaliFCPE] || "") : "";
     const localidad = idxLocalidad !== -1 ? (fila[idxLocalidad] || "") : "";
     const provincia = idxProvincia !== -1 ? (fila[idxProvincia] || "") : "";
