@@ -1,0 +1,864 @@
+/*************************************************************
+ * ALERTAS POR NODOS (VERSIÓN COMPLETA Y COMENTADA)
+ * - Ejecuta detección de "masivos" por nodo
+ * - Previene reenvíos con cache persistente (PropertiesService)
+ * - Evita considerar reportes demasiado antiguos (MAX_LOOKBACK_HOURS)
+ * - Bloqueos nocturnos / ventana de limpieza / triggers
+ *
+ * IMPORTANTE: revisar CONFIG (SPREADSHEET_ID y correos)
+ *************************************************************/
+
+/*****************************
+ * CONFIGURACIÓN PRINCIPAL   *
+ *****************************/
+const CONFIG = {
+  UMBRAL: 5,                  // Cantidad mínima de reportes para generar alerta
+  FRANJA_HORAS: 3,            // Horas a analizar para detectar masivos (si no aplica sufijo con letra)
+  SOLO_MINUTOS_PARES: true,   // Ejecutar solo en minutos pares (control simple)
+
+  // Bloqueo nocturno: entre INICIO (inclusive) y FIN (exclusive) horas
+  BLOQUEO_NOCTURNO: { INICIO: 0, FIN: 2 },
+
+  // Ventana de limpieza programada (evitamos enviar en esa franja)
+  BLOQUE_LIMPIEZA_HORA: 1,    // hora (1 => 01:00)
+  BLOQUE_LIMPIEZA_MIN_FIN: 15, // minutos hasta 01:15 inclusive
+
+  // <-- NUEVA OPCIÓN: cuántas horas hacia atrás consideramos "recientes" al buscar reportes
+  // Cambiar a 24 / 48 / 72 según lo que quieras permitir. 24 = últimas 24 horas.
+  MAX_LOOKBACK_HOURS: 24,
+
+  // Correos: reemplazá por quienes deben recibir las alertas
+  CORREOS: {
+    TO: [
+      "miguel.rojasm@konecta.com",
+      "rojas.miguel018@gmail.com",
+      "stestructurako@konecta.com",
+      "sergio.gragera@konecta.com",
+      "gustavo.astudillo@konecta.com",
+      "tomas.nievas@konecta.com"
+    ],
+    CC: [],
+    BCC: ["rojas.miguel018@gmail.com"]
+  },
+
+  // ID de la planilla donde están las hojas (dejar el tuyo)
+  SPREADSHEET_ID: "1-TfFDqea0OkGlQrQdls_3NxMqlQrK8HMieGwPWdLvIo",
+
+  // Nombres de hojas (ajustar si cambian en tu planilla)
+  HOJAS: {
+    REPORTE: "Reporte",
+    HISTORICO: "Historico",
+    DIARIA: "AlertasEnviadasDiarias",
+    HISTORICO_ALERTAS: "AlertasEnviadasHistorico"
+  },
+
+  // Key para propiedades persistentes (cache diario anti-duplicado)
+  PROP_KEY: "SENT_ALERTS"
+};
+
+/*****************************
+ * LOG Y UTILIDADES          *
+ *****************************/
+/**
+ * log(msg, lvl)
+ * - lvl opcional: "INFO" (por defecto), "WARN", "ERROR", "DEBUG"
+ * - usa la zona horaria del script para timestamp
+ */
+function log(msg, lvl) {
+  const ts = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
+  Logger.log(`[${lvl || "INFO"}] ${ts} - ${msg}`);
+}
+
+/**
+ * _leerEncabezados(hoja)
+ * - devuelve array con los encabezados de la primera fila (strings trimmed)
+ */
+function _leerEncabezados(hoja) {
+  const lastCol = Math.max(1, hoja.getLastColumn());
+  return hoja.getRange(1, 1, 1, lastCol).getValues()[0].map(x => (x || "").toString().trim());
+}
+
+/**
+ * _idxDe(head, opciones)
+ * - busca en 'head' cualquiera de las opciones (case-insensitive) y devuelve índice (0-based)
+ * - si no encuentra devuelve -1
+ */
+function _idxDe(head, opciones) {
+  for (const o of opciones) {
+    const i = head.findIndex(h => (h || "").toString().toLowerCase() === o.toLowerCase());
+    if (i !== -1) return i;
+  }
+  return -1;
+}
+
+/**
+ * parseDateCell(v)
+ * - convierte valores de celdas a Date robustamente.
+ * - acepta Date, número serial (Sheets), ISO, "dd/mm/yyyy HH:mm" y variantes.
+ */
+function parseDateCell(v) {
+  if (v === null || v === undefined || v === "") return null;
+  // Date ya
+  if (v instanceof Date) return v;
+  // Serial number (Sheets uses 1899-12-30 base)
+  if (typeof v === "number") {
+    return new Date(Math.round((v - 25569) * 86400 * 1000));
+  }
+  // Intentar new Date() (ISO u otras)
+  const s = v.toString().trim();
+  const iso = new Date(s);
+  if (!isNaN(iso.getTime())) return iso;
+  // dd/mm/yyyy [HH:MM]
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+  if (m) {
+    const d = parseInt(m[1], 10), mo = parseInt(m[2], 10) - 1, y = parseInt(m[3], 10);
+    const hh = m[4] ? parseInt(m[4], 10) : 0, mm = m[5] ? parseInt(m[5], 10) : 0;
+    return new Date(y, mo, d, hh, mm);
+  }
+  // último recurso: reemplazo guiones por slash
+  const fallback = new Date(s.replace(/-/g, "/"));
+  return isNaN(fallback.getTime()) ? null : fallback;
+}
+
+/*****************************
+ * MAPEO FLEXIBLE HISTÓRICO  *
+ *****************************/
+/**
+ * mapearIndicesHistorico(head)
+ * - devuelve objeto con índices (0-based) de columnas relevantes en hoja Historico
+ * - lanza error si faltan 'marca' (timestamp) o 'nodo'
+ */
+function mapearIndicesHistorico(head) {
+  function idxDe(opciones) { return _idxDe(head, opciones); }
+  const idx = {
+    marca:     idxDe(["Marca temporal", "Timestamp", "Fecha", "Fecha/Hora"]),
+    usuario:   idxDe(["Usuario:", "Usuario"]),
+    sn:        idxDe(["S/N Equipo:", "S/N Equipo", "Serial"]),
+    nodo:      idxDe(["Nodo:", "Nodo", "Clave"]),
+    localidad: idxDe(["Región/Localidad:", "Localidad:", "Zona", "Localidad"]),
+    ip:        idxDe(["IP:", "IP", "IP CM"]),
+    dni:       idxDe(["DNI:", "DNI", "DNI Cliente"]),
+    contacto:  idxDe(["Numero de contacto del cliente:", "Contacto:", "Teléfono", "Telefono"]),
+    servicio:  idxDe(["Servicio afectado:", "Servicio:", "Servicio"]),
+    mac:       idxDe(["MAC Equipo:", "MAC:", "MAC"])
+  };
+  if (idx.marca === -1 || idx.nodo === -1) {
+    throw new Error("La hoja 'Historico' debe tener al menos 'Nodo' y 'Marca temporal'.");
+  }
+  return idx;
+}
+
+/*****************************
+ * LOCK GLOBAL               *
+ *****************************/
+function adquirirLockGlobal() {
+  const lock = LockService.getScriptLock();
+  // intentamos 60s
+  if (!lock.tryLock(60000)) {
+    log("No se pudo adquirir lock global - posible ejecución simultánea", "WARN");
+    return null;
+  }
+  return lock;
+}
+
+/*****************************
+ * PROPERTIES: CACHE DIARIO  *
+ *****************************/
+/**
+ * Persistencia simple en Script Properties para evitar duplicados entre ejecuciones
+ */
+function _loadSentProps() {
+  const raw = PropertiesService.getScriptProperties().getProperty(CONFIG.PROP_KEY);
+  try { return raw ? JSON.parse(raw) : {}; }
+  catch (e) {
+    log(`Warning: parse error en ${CONFIG.PROP_KEY}: ${e.message}`, "WARN");
+    return {};
+  }
+}
+function _saveSentProps(obj) {
+  try { PropertiesService.getScriptProperties().setProperty(CONFIG.PROP_KEY, JSON.stringify(obj)); }
+  catch (e) { log(`Error guardando ${CONFIG.PROP_KEY}: ${e.message}`, "ERROR"); }
+}
+function _getSentSetForDate(dateStr) {
+  const m = _loadSentProps();
+  const arr = Array.isArray(m[dateStr]) ? m[dateStr] : [];
+  return new Set(arr.map(x => (x||"").toString().trim().toUpperCase()));
+}
+function _addSentForDate(dateStr, clave) {
+  const m = _loadSentProps();
+  m[dateStr] = Array.isArray(m[dateStr]) ? m[dateStr] : [];
+  const norma = (clave||"").toString().trim().toUpperCase();
+  if (!m[dateStr].some(x => (x||"").toString().trim().toUpperCase() === norma)) {
+    m[dateStr].push(norma);
+    _saveSentProps(m);
+  }
+}
+function _deleteSentForDate(dateStr) {
+  const m = _loadSentProps();
+  if (m[dateStr]) {
+    delete m[dateStr];
+    _saveSentProps(m);
+  }
+}
+
+/*****************************
+ * AUXILIARES DE ALERTAS     *
+ *****************************/
+/**
+ * obtenerAlertasHoy(hojaHistoricoAlertas, tz)
+ * - lee la hoja HistoricoAlertas y devuelve array de envíos "Enviado" cuyo fecha es HOY (en tz)
+ * - salida: [{ fecha: 'yyyy-MM-dd', nodo: 'NODO' }, ... ]
+ */
+function obtenerAlertasHoy(hojaHistorico, tz) {
+  if (!hojaHistorico || hojaHistorico.getLastRow() <= 1) return [];
+  const hoyStr = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd");
+  const vals = hojaHistorico.getDataRange().getValues();
+  const head = vals[0].map(x => (x||"").toString().trim());
+  const idxFecha  = _idxDe(head, ["Fecha de Envío","Fecha"]);
+  const idxNodo   = _idxDe(head, ["Nodo","Clave"]);
+  const idxEstado = _idxDe(head, ["Estado","EstadoMail","Estado Mail"]);
+  if (idxFecha === -1 || idxNodo === -1 || idxEstado === -1) return [];
+
+  const out = [];
+  for (let i = 1; i < vals.length; i++) {
+    const f = parseDateCell(vals[i][idxFecha]);
+    const nodo = (vals[i][idxNodo] || "").toString().trim();
+    const estado = (vals[i][idxEstado] || "").toString().trim().toLowerCase();
+    if (!f || !nodo || estado !== "enviado") continue;
+    const fStr = Utilities.formatDate(f, tz, "yyyy-MM-dd");
+    if (fStr === hoyStr) out.push({ fecha: fStr, nodo: nodo.toUpperCase() });
+  }
+  return out;
+}
+
+/**
+ * esDuplicadoHoy(prefijoNodo, cacheHoy, hoyStr)
+ * - revisa si ya se envió hoy: 1) revisa cacheHoy (datos cargados de hoja) 2) revisa properties persistente
+ */
+function esDuplicadoHoy(prefijoNodo, cacheHoy, hoyStr) {
+  if (!prefijoNodo) return false;
+  const pref = prefijoNodo.toString().trim().toUpperCase();
+  // 1) Revisar cache de la hoja
+  if (cacheHoy && Array.isArray(cacheHoy.datos)) {
+    const found = cacheHoy.datos.some(reg => reg.fecha === cacheHoy.fecha && (reg.nodo || "").toString().trim().toUpperCase() === pref);
+    if (found) return true;
+  }
+  // 2) Revisar properties persistente
+  const propsSet = _getSentSetForDate(hoyStr);
+  if (propsSet.has(pref)) return true;
+  return false;
+}
+
+/**
+ * yaSeEnvioAyer(prefijoNodo, hojaHistoricoAlertas, tz)
+ * - evita reenvíos entre 00:00 y 02:00 si el nodo ya fue enviado AYER.
+ */
+function yaSeEnvioAyer(prefijoNodo, hojaHistoricoAlertas, tz) {
+  if (!hojaHistoricoAlertas || hojaHistoricoAlertas.getLastRow() <= 1) return false;
+  const vals = hojaHistoricoAlertas.getDataRange().getValues();
+  const head = vals[0].map(x => (x||"").toString().trim());
+  const idxFecha  = _idxDe(head, ["Fecha de Envío","Fecha"]);
+  const idxNodo   = _idxDe(head, ["Nodo","Clave"]);
+  const idxEstado = _idxDe(head, ["Estado","EstadoMail","Estado Mail"]);
+  if (idxFecha === -1 || idxNodo === -1 || idxEstado === -1) return false;
+
+  const ahora = new Date();
+  const ayer = new Date(ahora.getTime() - 24 * 60 * 60 * 1000);
+  const ayerStr = Utilities.formatDate(ayer, tz, "yyyy-MM-dd");
+
+  // recorremos del final (más recientes primero)
+  for (let i = vals.length - 1; i >= 1; i--) {
+    const f = parseDateCell(vals[i][idxFecha]);
+    const nodo = (vals[i][idxNodo] || "").toString().trim();
+    const estado = ((vals[i][idxEstado] || "").toString().trim()).toLowerCase();
+    if (!f || !nodo) continue;
+    if (nodo.toUpperCase() !== prefijoNodo.toUpperCase()) continue;
+    if (estado !== "enviado") continue;
+    const fechaStr = Utilities.formatDate(new Date(f), tz, "yyyy-MM-dd");
+    if (fechaStr === ayerStr) return true;
+  }
+  return false;
+}
+
+/*****************************
+ * FILTRADO Y FRANJA         *
+ *****************************/
+/**
+ * filtrarReportesNodo(registros, prefijoNodo, nodoIndex)
+ * - devuelve filas cuyo valor en nodoIndex comienza con prefijoNodo (case-insensitive)
+ */
+function filtrarReportesNodo(registros, prefijoNodo, nodoIndex) {
+  const pref = (prefijoNodo || "").toString().toUpperCase();
+  return registros.filter(row => {
+    const nodoHistorico = (row[nodoIndex] || "").toString().trim().toUpperCase();
+    return nodoHistorico.startsWith(pref);
+  });
+}
+
+/**
+ * filtrarReportesFranja(rows, idxFecha, horas, referenceDate)
+ * - FILTRA reportes cuya fecha cae entre (referenceDate - horas) y referenceDate.
+ * - antes usábamos la 'ultimaFecha' del histórico; ahora usamos `referenceDate` (por lo general 'now')
+ */
+function filtrarReportesFranja(rows, idxFecha, horas, referenceDate) {
+  const ref = (referenceDate && referenceDate instanceof Date) ? referenceDate : new Date();
+  const desde = new Date(ref.getTime() - horas * 60 * 60 * 1000);
+  return rows.filter(row => {
+    const f = parseDateCell(row[idxFecha]);
+    return f && f >= desde && f <= ref;
+  });
+}
+
+/**
+ * filtrarReportesPorAntiguedad(rows, idxFecha, maxHours, referenceDate)
+ * - elimina reportes más antiguos que (referenceDate - maxHours)
+ * - útil para quitar meses/días viejos que sesgan la "ultimaFecha"
+ */
+function filtrarReportesPorAntiguedad(rows, idxFecha, maxHours, referenceDate) {
+  const ref = (referenceDate && referenceDate instanceof Date) ? referenceDate : new Date();
+  const desde = new Date(ref.getTime() - maxHours * 60 * 60 * 1000);
+  return rows.filter(row => {
+    const f = parseDateCell(row[idxFecha]);
+    return f && f >= desde && f <= ref;
+  });
+}
+
+/*****************************
+ * PROCESO DE ALERTA (ENVÍO) *
+ *****************************/
+/**
+ * procesarAlerta(ctx)
+ * - ctx: { hojas, indiceFilaReporte, idxEstadoR, prefijoNodo, reportesNodo, reportesEnFranja, indices, franjaActual, hoyStr, tz }
+ * - arma mail, marca estado, guarda en hojas y properties
+ */
+function procesarAlerta(ctx) {
+  const { hojas, indiceFilaReporte, idxEstadoR, prefijoNodo, reportesNodo, reportesEnFranja, indices, franjaActual, hoyStr, tz } = ctx;
+
+  // doble-check contra properties justo antes de enviar (para evitar carrera)
+  if (_getSentSetForDate(hoyStr).has(prefijoNodo.toUpperCase())) {
+    log(`🔁 Prevención final: ${prefijoNodo} ya en cache Properties hoy. No se envía.`, "DEBUG");
+    try { hojas.reporte.getRange(indiceFilaReporte + 1, idxEstadoR + 1).setValue(""); } catch(e){ }
+    return;
+  }
+
+  const cuerpo = generarCuerpoMail(prefijoNodo, franjaActual, reportesNodo, reportesEnFranja, indices);
+  const asunto = `⚠️ Nodo ${prefijoNodo} con ${reportesNodo.length} reportes - Posible Masivo`;
+
+  // Marcar "Enviando" en la columna real de "Estado"
+  try {
+    hojas.reporte.getRange(indiceFilaReporte + 1, idxEstadoR + 1).setValue("Enviando");
+  } catch(e){ /* tolerante */ }
+
+  try {
+    const to = (CONFIG.CORREOS.TO || []).filter(Boolean).join(",");
+    if (!to) throw new Error("CONFIG.CORREOS.TO vacío.");
+
+    const opciones = { to, subject: asunto, body: cuerpo };
+    const cc  = (CONFIG.CORREOS.CC  || []).filter(Boolean).join(",");
+    const bcc = (CONFIG.CORREOS.BCC || []).filter(Boolean).join(",");
+    if (cc)  opciones.cc  = cc;
+    if (bcc) opciones.bcc = bcc;
+
+    // Envío
+    MailApp.sendEmail(opciones);
+
+    // Marcar enviado y registrar en hojas
+    try { hojas.reporte.getRange(indiceFilaReporte + 1, idxEstadoR + 1).setValue("Enviado"); } catch(e){}
+
+    registrarAlerta(hojas.diaria, prefijoNodo, reportesNodo.length, franjaActual, cuerpo);
+    registrarAlerta(hojas.historicoAlertas, prefijoNodo, reportesNodo.length, franjaActual, cuerpo);
+
+    // Persistir en properties para anti-duplicado entre ejecuciones
+    _addSentForDate(hoyStr, prefijoNodo);
+
+    log(`📤 Alerta enviada para nodo ${prefijoNodo}`, "INFO");
+  } catch (error) {
+    try { hojas.reporte.getRange(indiceFilaReporte + 1, idxEstadoR + 1).setValue("Error"); } catch(e){}
+    log(`❌ Error al enviar alerta para ${prefijoNodo}: ${error && error.message ? error.message : error}`, "ERROR");
+  }
+}
+
+/**
+ * registrarAlerta(hoja, nodo, cantidad, franja, cuerpo)
+ * - agrega fila a hoja (fecha actual, nodo, cantidad, franja, 'Enviado') y guarda detalle como nota
+ */
+function registrarAlerta(hoja, nodo, cantidad, franja, cuerpo) {
+  const fila = [new Date(), nodo, cantidad, franja, "Enviado", "Detalle guardado"];
+  hoja.appendRow(fila);
+  try { hoja.getRange(hoja.getLastRow(), 6).setNote(cuerpo); } catch (e) {}
+}
+
+/*****************************
+ * FORMATEOS                 *
+ *****************************/
+function safeCell(row, idx) {
+  return (idx === -1 || idx === undefined || row[idx] === null || row[idx] === undefined || row[idx] === "") ? "-" : row[idx];
+}
+
+function formatearFecha(fechaRaw) {
+  const f = parseDateCell(fechaRaw);
+  return f ? Utilities.formatDate(f, Session.getScriptTimeZone(), "dd/MM/yyyy HH:mm") + " hs" : "-";
+}
+
+function limpiarUsuario(valor) {
+  const soloNumeros = (valor || "").toString().replace(/\D/g, "");
+  return soloNumeros.length > 0 ? soloNumeros : "S/D";
+}
+
+/**
+ * formatearReporte(row, idxs)
+ * - crea un bloque textual con los campos más relevantes
+ */
+function formatearReporte(row, idxs) {
+  return (
+    `• Usuario: ${limpiarUsuario(safeCell(row, idxs.usuario))}\n` +
+    `• Fecha: ${formatearFecha(safeCell(row, idxs.marca))}\n` +
+    `• Nodo: ${safeCell(row, idxs.nodo)}\n` +
+    `• Localidad: ${safeCell(row, idxs.localidad)}\n` +
+    `• DNI Cliente: ${safeCell(row, idxs.dni)}\n` +
+    `• Contacto: ${safeCell(row, idxs.contacto)}\n` +
+    `• Servicio: ${safeCell(row, idxs.servicio)}\n` +
+    `• IP CM: ${safeCell(row, idxs.ip)}\n` +
+    `• MAC: ${safeCell(row, idxs.mac)}\n` +
+    `• S/N Equipo: ${safeCell(row, idxs.sn)}\n` +
+    `──────────────────────────────\n`
+  );
+}
+
+/**
+ * generarCuerpoMail(prefijoNodo, franjaActual, reportesNodo, reportesEnFranja, idxs)
+ * - arma cuerpo del mail con reportes dentro y fuera de la franja
+ * - dado que filtramos por antigüedad (MAX_LOOKBACK_HOURS), los "fuera de franja"
+ * no serán meses/meses atrás, sino registros recientes fuera de la ventana corta
+ */
+function generarCuerpoMail(prefijoNodo, franjaActual, reportesNodo, reportesEnFranja, idxs) {
+  const variantesNodo = [...new Set(reportesNodo.map(row => (row[idxs.nodo] || "").toString().trim()))];
+
+  let cuerpo = `Estimados,\n\n`;
+  cuerpo += `Se ha detectado una concentración de reportes en el nodo ${prefijoNodo} durante las últimas ${franjaActual} horas.\n`;
+  cuerpo += `Esto podría indicar una afectación masiva en la zona.\n\n`;
+  cuerpo += `📌 Nodo Detectado: ${prefijoNodo}\n`;
+  cuerpo += `🔸 Variantes detectadas: ${variantesNodo.join(", ")}\n`;
+  cuerpo += `📊 Total de reportes asociados (recientes): ${reportesNodo.length}\n`;
+  cuerpo += `⏱️ Franja horaria analizada: Últimas ${franjaActual} horas\n\n`;
+  cuerpo += `📝 Detalle de reportes:\n\n📍 Reportes dentro de la franja horaria analizada:\n\n`;
+
+  reportesEnFranja.forEach(row => { cuerpo += formatearReporte(row, idxs); });
+
+  // reportes fuera de la franja pero aún dentro de MAX_LOOKBACK_HOURS
+  const setEnFranja = new Set(reportesEnFranja.map(r => r.join("\u0001")));
+  const reportesFueraFranja = reportesNodo.filter(row => !setEnFranja.has(row.join("\u0001")));
+  if (reportesFueraFranja.length > 0) {
+    cuerpo += `\n📍 Reportes fuera de la franja horaria analizada (pero recientes):\n\n`;
+    reportesFueraFranja.forEach(row => { cuerpo += formatearReporte(row, idxs); });
+  }
+
+  cuerpo += `\n🔍 Por favor, revisar el estado del nodo y sus variantes.\n\nSaludos cordiales.`;
+  return cuerpo;
+}
+
+/*****************************
+ * PRINCIPAL (MINUTOS PARES) *
+ *****************************/
+function validarNodosYEnviarAlertas() {
+  // control de minutos pares (antes de adquirir lock)
+  const ahoraInicial = new Date();
+  const minutoInicial = ahoraInicial.getMinutes();
+  if (CONFIG.SOLO_MINUTOS_PARES && (minutoInicial % 2 !== 0)) {
+    log("⏭️ Ejecución saltada (minuto IMPAR - sistema de NODOS)", "INFO");
+    return;
+  }
+
+  let lock = null;
+  try {
+    lock = adquirirLockGlobal();
+    if (!lock) return;
+
+    // recalcular ahora para precisión
+    const ahora = new Date();
+    const minutoActual = ahora.getMinutes();
+    const horaActual = ahora.getHours();
+
+    // Bloque durante ventana de limpieza para evitar solapamiento con la función que limpia:
+    if (horaActual === CONFIG.BLOQUE_LIMPIEZA_HORA && minutoActual <= CONFIG.BLOQUE_LIMPIEZA_MIN_FIN) {
+      log(`⏭️ Bloqueado por ventana de limpieza (${("0"+CONFIG.BLOQUE_LIMPIEZA_HORA).slice(-2)}:00-${("0"+CONFIG.BLOQUE_LIMPIEZA_HORA).slice(-2)}:${("0"+CONFIG.BLOQUE_LIMPIEZA_MIN_FIN).slice(-2)}).`, "INFO");
+      return;
+    }
+
+    const tz = Session.getScriptTimeZone();
+    const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+    const hojas = {
+      reporte: ss.getSheetByName(CONFIG.HOJAS.REPORTE),
+      historico: ss.getSheetByName(CONFIG.HOJAS.HISTORICO),
+      diaria: ss.getSheetByName(CONFIG.HOJAS.DIARIA),
+      historicoAlertas: ss.getSheetByName(CONFIG.HOJAS.HISTORICO_ALERTAS)
+    };
+    for (const [k, h] of Object.entries(hojas)) {
+      if (!h) throw new Error(`❌ No se encontró la hoja: ${k}`);
+    }
+
+    // Leemos todo el Historico (encabezado + registros)
+    const historicoVals = hojas.historico.getDataRange().getValues();
+    if (historicoVals.length <= 1) {
+      log("Historico vacío: nada para evaluar.", "INFO");
+      return;
+    }
+    const headH = historicoVals[0].map(x => (x||"").toString().trim());
+    const idxH = mapearIndicesHistorico(headH);  // lanza si falta datos clave
+    const registros = historicoVals.slice(1);
+
+    // Reporte + asegurar columna Estado (si no existe, crearla al final)
+    const headR = _leerEncabezados(hojas.reporte);
+    const idxEstadoR = (function() {
+      const i = _idxDe(headR, ["Estado","Estado Mail","Estado de Mail","EstadoMail"]);
+      if (i !== -1) return i;
+      const newIdx0 = headR.length;
+      hojas.reporte.insertColumnAfter(headR.length);
+      hojas.reporte.getRange(1, headR.length + 1).setValue("Estado");
+      return newIdx0;
+    })();
+    const reporteData = hojas.reporte.getDataRange().getValues();
+
+    // Encabezados base en hojas de alertas (si hojas vacías)
+    const encabezadoAlertas = ["Fecha de Envío", "Nodo", "Cantidad de Reportes", "Franja Horaria (h)", "Estado", "Reportes"];
+    [hojas.diaria, hojas.historicoAlertas].forEach(hoja => {
+      if (hoja.getLastRow() === 0) hoja.appendRow(encabezadoAlertas);
+    });
+
+    // Contexto de tiempo y caches de anti-duplicado
+    const hoyStr = Utilities.formatDate(ahora, tz, "yyyy-MM-dd");
+    const enviadosHoyEnHist = obtenerAlertasHoy(hojas.historicoAlertas, tz).map(x => (x.nodo || "").toString().trim().toUpperCase());
+    const sentFromHistorySet = new Set(enviadosHoyEnHist);
+    const sentPropsSet = _getSentSetForDate(hoyStr);
+    // sentTodaySet representa la union de lo que hay en hoja y en propiedades
+    const sentTodaySet = new Set([...sentFromHistorySet, ...Array.from(sentPropsSet)]); // unión
+
+    // Cache HOY para anti-duplicado (estructura usada por esDuplicadoHoy)
+    const cacheHoy = { fecha: hoyStr, datos: obtenerAlertasHoy(hojas.historicoAlertas, tz) };
+
+    // Iterar filas de "Reporte" (saltamos encabezado)
+    for (let i = 1; i < reporteData.length; i++) {
+      const fila = reporteData[i];
+
+      const nodoCompleto = (fila[0] || "").toString().trim();
+      const prefijoNodo = nodoCompleto.substring(0, 6).toUpperCase(); // ej "CTR001" (ajustable)
+      const cantidad = Number(fila[1]);
+      const estado = (fila[idxEstadoR] || "").toString().trim();
+
+      if (!prefijoNodo || !isFinite(cantidad)) {
+        log(`Fila ${i+1}: sin nodo o cantidad inválida → skip`, "DEBUG");
+        continue;
+      }
+
+      if (estado === "Enviado" || estado === "Enviando") {
+        log(`⏭️ Nodo ${prefijoNodo} con estado ${estado}.`, "DEBUG");
+        continue;
+      }
+
+      // Duplicado HOY (hoja + properties)
+      if (esDuplicadoHoy(prefijoNodo, cacheHoy, hoyStr)) {
+        log(`🔁 Duplicado HOY para nodo ${prefijoNodo}.`, "DEBUG");
+        continue;
+      }
+
+      // Bloque 00:00–01:59 si se envió AYER
+      const enVentanaNocturna = (horaActual >= CONFIG.BLOQUEO_NOCTURNO.INICIO && horaActual < CONFIG.BLOQUEO_NOCTURNO.FIN);
+      if (enVentanaNocturna && yaSeEnvioAyer(prefijoNodo, hojas.historicoAlertas, tz)) {
+        log(`🌙 Bloqueo post-00 nodo ${prefijoNodo} ya notificado AYER.`, "INFO");
+        continue;
+      }
+
+      if (cantidad < CONFIG.UMBRAL) {
+        log(`Nodo ${prefijoNodo}: cantidad ${cantidad} < umbral ${CONFIG.UMBRAL} → skip`, "DEBUG");
+        continue;
+      }
+
+      // FILTRAR registros del Historico según prefijo (todas las variantes del nodo)
+      let reportesNodo = filtrarReportesNodo(registros, prefijoNodo, idxH.nodo);
+      if (!reportesNodo.length) {
+        log(`Nodo ${prefijoNodo}: sin registros en Historico.`, "DEBUG");
+        continue;
+      }
+
+      // Ordenar por fecha desc (más reciente primero)
+      reportesNodo.sort((a, b) => {
+        const da = parseDateCell(a[idxH.marca]);
+        const db = parseDateCell(b[idxH.marca]);
+        return (db ? db.getTime() : 0) - (da ? da.getTime() : 0);
+      });
+
+      // -----------------------------
+      // FILTRADO POR ANTIGÜEDAD (clave del fix)
+      // - Eliminamos registros con fecha anterior a (now - MAX_LOOKBACK_HOURS)
+      // -----------------------------
+      const ahoraRef = new Date();
+      reportesNodo = filtrarReportesPorAntiguedad(reportesNodo, idxH.marca, CONFIG.MAX_LOOKBACK_HOURS, ahoraRef);
+
+      if (!reportesNodo.length) {
+        log(`Nodo ${prefijoNodo}: no hay reportes recientes dentro de las últimas ${CONFIG.MAX_LOOKBACK_HOURS} horas → skip`, "DEBUG");
+        continue;
+      }
+
+      // Determinamos la franja a usar (4h si termina en letra, sino FRANJA_HORAS)
+      const franjaActual = /[A-Z]$/.test(nodoCompleto) ? 4 : CONFIG.FRANJA_HORAS;
+
+      // FILTRAMOS reportes dentro de la franja respecto a 'ahora'
+      const reportesEnFranja = filtrarReportesFranja(reportesNodo, idxH.marca, franjaActual, ahoraRef);
+
+      log(`Nodo ${prefijoNodo}: total=${reportesNodo.length} enFranja(${franjaActual}h)=${reportesEnFranja.length}`, "DEBUG");
+
+      // Si cantidad en franja >= UMBRAL → enviamos alerta
+      if (reportesEnFranja.length >= CONFIG.UMBRAL) {
+        // preparar contexto y enviar
+        const ctx = {
+          hojas,
+          indiceFilaReporte: i,
+          idxEstadoR,
+          prefijoNodo,
+          reportesNodo,
+          reportesEnFranja,
+          indices: idxH,
+          franjaActual,
+          hoyStr,
+          tz
+        };
+        procesarAlerta(ctx);
+      } else {
+        log(`⛔ Nodo ${prefijoNodo} no cumple franja: ${reportesEnFranja.length}/${CONFIG.UMBRAL} en ${franjaActual}h`, "INFO");
+      }
+    }
+
+  } catch (error) {
+    log(`❌ Error crítico en validarNodosYEnviarAlertas: ${error && error.message ? error.message : error}`, "ERROR");
+  } finally {
+    if (lock) {
+      try { lock.releaseLock(); } catch(e) {}
+    }
+  }
+}
+
+/*****************************
+ * LIMPIEZA DIARIA (solo EstadoMail) *
+ * Mantiene limpieza programada y limpia cache de properties (ayer)
+ *****************************/
+function limpiarAlertasDiarias() {
+  let lock = null;
+  try {
+    lock = adquirirLockGlobal();
+    if (!lock) return;
+
+    const ahora = new Date();
+    const hora = ahora.getHours(), min = ahora.getMinutes();
+
+    // Solo entre 01:01 y 01:10 (evita correr en otros momentos)
+    if (hora !== CONFIG.BLOQUE_LIMPIEZA_HORA || min < 1 || min > 10) {
+      log("⏭️ Limpieza diaria saltada (fuera de 01:01–01:10)", "INFO");
+      return;
+    }
+
+    const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+
+    // 1) Limpiar hoja de AlertasDiarias (mantener encabezado)
+    const hojaDiaria = ss.getSheetByName(CONFIG.HOJAS.DIARIA);
+    if (hojaDiaria && hojaDiaria.getLastRow() > 1) {
+      hojaDiaria.deleteRows(2, hojaDiaria.getLastRow() - 1);
+      log("🧹 Limpieza diaria de 'AlertasEnviadasDiarias' completada", "INFO");
+    }
+
+    // 2) Limpiar la columna 'Estado' en hoja Reporte (buscar índice dinámicamente)
+    const hojaReporte = ss.getSheetByName(CONFIG.HOJAS.REPORTE);
+    if (hojaReporte && hojaReporte.getLastRow() > 1) {
+      const headR = _leerEncabezados(hojaReporte);
+      const idxEstado = _idxDe(headR, ["Estado","Estado Mail","EstadoMail","Estado de Mail"]);
+      if (idxEstado !== -1) {
+        hojaReporte.getRange(2, idxEstado + 1, hojaReporte.getLastRow() - 1, 1).clearContent();
+        log("🧹 Limpieza diaria de columna 'Estado' en hoja Reporte completada", "INFO");
+      } else {
+        // fallback a columna C por compatibilidad (pero loguear aviso)
+        if (hojaReporte.getLastColumn() >= 3 && hojaReporte.getLastRow() > 1) {
+          hojaReporte.getRange(2, 3, hojaReporte.getLastRow() - 1, 1).clearContent();
+          log("⚠️ Encabezado 'Estado' no hallado - se limpió columna C por compatibilidad", "WARN");
+        } else {
+          log("⚠️ No se limpió columna 'Estado': no existe la columna C ni encabezado 'Estado'", "WARN");
+        }
+      }
+    }
+
+    // 3) Además eliminar el cache de properties del día anterior
+    const tz = Session.getScriptTimeZone();
+    const ayer = new Date(ahora.getTime() - 24*60*60*1000);
+    const ayerStr = Utilities.formatDate(ayer, tz, "yyyy-MM-dd");
+    try {
+      const m = _loadSentProps();
+      if (m[ayerStr]) {
+        delete m[ayerStr];
+        _saveSentProps(m);
+        log(`🔁 Properties: eliminado cache de envíos para ${ayerStr}`, "INFO");
+      } else {
+        log(`🔁 Properties: no había cache para ${ayerStr}`, "DEBUG");
+      }
+    } catch(e){
+      log(`Warn: no se pudo limpiar properties ayer: ${e.message}`, "WARN");
+    }
+
+  } catch (e) {
+    log(`❌ Error en limpieza diaria: ${e.message}`, "ERROR");
+  } finally {
+    if (lock) {
+      try { lock.releaseLock(); } catch(e) {}
+    }
+  }
+}
+
+/*****************************
+ * TRIGGERS                  *
+ *****************************/
+function configurarActivadoresNodos() {
+  // Eliminar triggers existentes de ESTE código (para evitar duplicados)
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (["validarNodosYEnviarAlertas","limpiarAlertasDiarias","triggerConBloqueo"].includes(t.getHandlerFunction())) {
+      ScriptApp.deleteTrigger(t);
+    }
+  });
+
+  // Trigger principal (cada 1 minuto)
+  ScriptApp.newTrigger("triggerConBloqueo")
+    .timeBased()
+    .everyMinutes(1)
+    .create();
+
+  // Trigger de limpieza diaria (01:01 aprox)
+  ScriptApp.newTrigger("limpiarAlertasDiarias")
+    .timeBased()
+    .everyDays(1)
+    .atHour(CONFIG.BLOQUE_LIMPIEZA_HORA)
+    .nearMinute(1)
+    .create();
+
+  log("🔔 Activadores NODOS configurados (1m + limpieza aprox 01:01).", "INFO");
+}
+
+/*******************************************************
+ * PRUEBA DE CORREO MANUAL (VERSIÓN DINÁMICA Y DETALLADA)
+ * - Busca automáticamente un nodo con registros del día de hoy.
+ * - Simula una alerta real usando datos frescos y relevantes.
+ * - Genera un cuerpo de correo con formato completo.
+ *******************************************************/
+function enviarPruebaDetallada() {
+  // --- CONFIGURACIÓN DE LA PRUEBA ---
+  const TEST_EMAIL = 'rojas.miguel018@gmail.com'; // Correo que recibirá la prueba
+  // ------------------------------------
+
+  try {
+    log(`🚀 Iniciando prueba de correo dinámica...`);
+
+    const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+    const hojaHistorico = ss.getSheetByName(CONFIG.HOJAS.HISTORICO);
+
+    if (!hojaHistorico) {
+      throw new Error(`No se encontró la hoja de Histórico: "${CONFIG.HOJAS.HISTORICO}"`);
+    }
+
+    const historicoVals = hojaHistorico.getDataRange().getValues();
+    const headH = historicoVals[0].map(x => (x || "").toString().trim());
+    const indices = mapearIndicesHistorico(headH);
+    const registros = historicoVals.slice(1);
+    
+    // 1. Buscamos un nodo que tenga actividad HOY
+    let nodoDelDia = null;
+    const tz = Session.getScriptTimeZone();
+    const hoyStr = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd");
+
+    for (const row of registros) {
+      const fechaRegistro = parseDateCell(row[indices.marca]);
+      if (fechaRegistro && Utilities.formatDate(fechaRegistro, tz, "yyyy-MM-dd") === hoyStr) {
+        nodoDelDia = (row[indices.nodo] || "").substring(0, 6).toUpperCase();
+        if (nodoDelDia) {
+          log(`✅ Nodo con actividad hoy encontrado: ${nodoDelDia}`);
+          break; // Encontramos uno, salimos del bucle
+        }
+      }
+    }
+    
+    if (!nodoDelDia) {
+      log(`⚠️ No se encontraron nodos con actividad hoy (${hoyStr}). No se puede generar la prueba.`, "WARN");
+      return;
+    }
+
+    // 2. Filtramos todos los reportes (recientes) de ese nodo
+    let reportesDelNodo = filtrarReportesNodo(registros, nodoDelDia, indices.nodo);
+    
+    // 3. Ordenamos por fecha para usar los más recientes
+    reportesDelNodo.sort((a, b) => {
+      const da = parseDateCell(a[indices.marca]);
+      const db = parseDateCell(b[indices.marca]);
+      return (db ? db.getTime() : 0) - (da ? da.getTime() : 0);
+    });
+
+    log(`🔎 Se encontraron ${reportesDelNodo.length} registros para ${nodoDelDia}. Usando los más recientes para el correo.`);
+
+    // 4. Simulamos los reportes para el cuerpo del correo
+    const reportesNodo = reportesDelNodo.slice(0, 5); 
+    const reportesEnFranja = reportesDelNodo.slice(0, 3);
+    const franjaActual = 3;
+
+    // 5. Generamos el cuerpo del correo
+    const cuerpoMail = generarCuerpoMail(nodoDelDia, franjaActual, reportesNodo, reportesEnFranja, indices);
+    const asuntoMail = `[PRUEBA DINÁMICA] ⚠️ Nodo ${nodoDelDia} - Posible Masivo`;
+
+    // 6. Enviamos el correo de prueba
+    MailApp.sendEmail({
+      to: TEST_EMAIL,
+      subject: asuntoMail,
+      body: cuerpoMail
+    });
+
+    log(`✅ Correo de prueba detallado enviado exitosamente a: ${TEST_EMAIL}`, "INFO");
+
+  } catch (error) {
+    log(`❌ Error crítico durante la prueba detallada: ${error.message}`, "ERROR");
+  }
+}
+/*****************************
+ * UTIL: enviar correo con las mismas opciones originales (usado internamente)
+ *****************************/
+function enviarCorreoConOpciones(asunto, cuerpo) {
+  const to = (CONFIG.CORREOS.TO || []).filter(Boolean).join(",");
+  if (!to) throw new Error("CONFIG.CORREOS.TO está vacío. Agregá destinatarios.");
+
+  const opciones = { to, subject: asunto, body: cuerpo };
+  const cc = (CONFIG.CORREOS.CC || []).filter(Boolean).join(",");
+  const bcc = (CONFIG.CORREOS.BCC || []).filter(Boolean).join(",");
+  if (cc) opciones.cc = cc;
+  if (bcc) opciones.bcc = bcc;
+
+  MailApp.sendEmail(opciones);
+}
+
+/*****************************
+ * TRIGGER CON BLOQUEO EXTRA *
+ * Bloquea cualquier envío de mails entre 00:59 y 03:00
+ *****************************/
+function triggerConBloqueo() {
+  var ahora = new Date();
+  var hora = ahora.getHours();
+  var minutos = ahora.getMinutes();
+
+  // Convertimos hora:min a decimal (ej: 1:30 → 1.5)
+  var horaDecimal = hora + (minutos / 60);
+
+  // Rango bloqueado 00:59 (≈0.983) hasta 03:00 (3.0)
+  var inicioBloqueo = 0 + (59 / 60); // 0.9833...
+  var finBloqueo = 3.0;
+
+  if (horaDecimal >= inicioBloqueo && horaDecimal < finBloqueo) {
+    Logger.log("⛔ Bloqueo activo: no se ejecuta validarNodosYEnviarAlertas entre 00:59 y 03:00 AM.");
+    return; // No ejecuta nada
+  }
+
+  try {
+    validarNodosYEnviarAlertas();
+  } catch (e) {
+    Logger.log("❌ Error al ejecutar validarNodosYEnviarAlertas: " + e);
+  }
+}
