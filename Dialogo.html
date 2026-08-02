@@ -1,262 +1,337 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
   <head>
-    <base target="_top">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <meta charset="UTF-8" />
+    <base target="_top" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <style>
-      :root {
-        --primary: #2F54EB;
-        --primary-light: #F0F5FF;
-        --success: #10B981;
-        --success-light: #E6FFFA;
-        --error: #EF4444;
-        --error-light: #FEE2E2;
-        --warning: #F59E0B;
-        --warning-light: #FEF3C7;
-        --bg: #F8FAFC;
-        --card: #FFFFFF;
-        --border: #E2E8F0;
-        --text: #1E293B;
-        --text-light: #64748B;
-      }
-      * { box-sizing: border-box; margin: 0; padding: 0; }
+      /* ===== RESET & BASE ===== */
+      * { margin: 0; padding: 0; box-sizing: border-box; }
       body {
-        font-family: 'Outfit', sans-serif;
-        background: var(--bg);
-        padding: 20px;
-        color: var(--text);
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        background: #f7f9fc;
+        background-image: radial-gradient(circle at 10% 30%, rgba(10, 37, 64, 0.03) 0%, transparent 60%),
+          radial-gradient(circle at 90% 70%, rgba(230, 126, 34, 0.04) 0%, transparent 60%);
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 32px 20px 20px;
+        color: #1e293b;
+        line-height: 1.5;
       }
+      .app-container { width: 100%; max-width: 960px; display: flex; flex-direction: column; gap: 28px; }
+
+      /* ===== CABECERA ===== */
+      .brand-header {
+        display: flex; align-items: center; gap: 16px; padding-bottom: 8px;
+        border-bottom: 2px solid rgba(10, 37, 64, 0.08); margin-bottom: 4px;
+      }
+      .brand-icon {
+        width: 48px; height: 48px; background: linear-gradient(145deg, #0a2540, #1a3a5c);
+        border-radius: 14px; display: flex; align-items: center; justify-content: center;
+        color: #f7b731; font-weight: 800; font-size: 22px; letter-spacing: -1px;
+        box-shadow: 0 8px 16px -6px rgba(10, 37, 64, 0.25); flex-shrink: 0;
+      }
+      .brand-text { display: flex; flex-direction: column; }
+      .brand-text h1 { font-weight: 800; font-size: 22px; color: #0a2540; letter-spacing: -0.5px; line-height: 1.2; }
+      .brand-text span { font-size: 13px; font-weight: 500; color: #64748b; letter-spacing: 0.3px; margin-top: 2px; }
+
+      /* ===== TARJETAS ===== */
       .card {
-        background: var(--card);
-        border-radius: 16px;
-        padding: 20px;
-        margin-bottom: 16px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.04);
-        border: 1px solid var(--border);
+        background: #ffffff; border-radius: 20px; padding: 32px 32px 28px;
+        box-shadow: 0 12px 40px -12px rgba(10, 37, 64, 0.12), 0 4px 16px -8px rgba(0, 0, 0, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.6); transition: box-shadow 0.25s ease, transform 0.2s ease;
       }
-      h3 { margin-bottom: 8px; font-weight: 700; font-size: 18px; color: var(--primary); display: flex; align-items: center; gap: 8px; }
-      h4 { font-weight: 600; font-size: 14px; margin-bottom: 10px; color: var(--text); }
+      .card:hover { box-shadow: 0 20px 48px -16px rgba(10, 37, 64, 0.18); }
+
+      .card-header {
+        display: flex; align-items: center; gap: 12px; padding-bottom: 14px;
+        margin-bottom: 24px; border-bottom: 2px solid #eef2f6;
+      }
+      .card-header h3 {
+        font-weight: 700; font-size: 20px; color: #0a2540; letter-spacing: -0.3px;
+        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      }
+      .card-header h3 small { font-weight: 400; font-size: 14px; color: #94a3b8; letter-spacing: 0; margin-left: 4px; }
+      .required-badge {
+        background: #fef2f2; color: #dc2626; font-size: 11px; font-weight: 700;
+        padding: 2px 10px; border-radius: 50px; letter-spacing: 0.5px; margin-left: 8px; border: 1px solid #fecaca;
+      }
       .instructions {
-        background: var(--primary-light);
-        border-left: 4px solid var(--primary);
-        padding: 12px;
-        border-radius: 8px;
-        font-size: 13px;
-        margin-bottom: 16px;
-        color: #1D39C4;
-        line-height: 1.4;
+        background: #f1f5f9; border-left: 4px solid #f7b731; padding: 16px 20px;
+        border-radius: 12px; font-size: 14px; color: #1e293b; line-height: 1.6;
+        margin-bottom: 28px; box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
       }
-      .form-group { margin-bottom: 16px; }
+      .instructions strong { color: #0a2540; font-weight: 700; }
+
+      /* ===== FORM GROUP ===== */
+      .form-group { margin-bottom: 24px; }
       label {
-        display: block;
-        font-size: 13px;
-        font-weight: 600;
-        margin-bottom: 6px;
-        color: var(--text-light);
+        display: flex; font-size: 13px; font-weight: 600; margin-bottom: 10px;
+        color: #334155; letter-spacing: 0.3px; text-transform: uppercase; align-items: center; gap: 8px;
       }
-      .user-grid-container {
-        max-height: 240px;
-        overflow-y: auto;
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 12px;
-        background: var(--bg);
-      }
-      .user-grid-container::-webkit-scrollbar {
-        width: 6px;
-      }
-      .user-grid-container::-webkit-scrollbar-track {
-        background: transparent;
-      }
-      .user-grid-container::-webkit-scrollbar-thumb {
-        background: #CBD5E1;
-        border-radius: 3px;
-      }
-      .user-grid-container::-webkit-scrollbar-thumb:hover {
-        background: #94A3B8;
-      }
-      .user-rows-list {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-      }
-      .user-row {
-        display: flex;
-        align-items: center;
-        gap: 16px;
-        background: #FFFFFF;
-        padding: 10px 14px;
-        border-radius: 10px;
-        border: 1px solid var(--border);
-      }
-      .user-row-meta {
-        display: flex;
-        flex-direction: column;
-        min-width: 220px;
-        max-width: 220px;
-      }
-      .user-row-mac {
-        font-size: 13px;
-        font-weight: 700;
-        color: var(--primary);
-        font-family: monospace;
-        letter-spacing: 0.5px;
-      }
-      .user-row-abonado {
-        font-size: 11px;
-        color: var(--text-light);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        margin-top: 2px;
-      }
-      .user-inputs {
-        display: flex;
-        gap: 10px;
-        flex: 1;
-      }
-      .input-wrapper-half {
-        flex: 1;
-        display: flex;
-        align-items: center;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        overflow: hidden;
-        background: white;
-        transition: all 0.3s ease;
-      }
-      .input-wrapper-half.focus {
-        border-color: var(--primary);
-        box-shadow: 0 0 0 3px rgba(47, 84, 235, 0.15);
-      }
-      .input-wrapper-half.valid {
-        border-color: var(--success);
-        box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
-      }
-      .input-wrapper-half.invalid {
-        border-color: var(--error);
-        box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
-      }
-      .prefix {
-        background: #F1F5F9;
-        padding: 8px 10px;
-        font-weight: 700;
-        color: var(--text-light);
-        border-right: 1px solid var(--border);
-        font-size: 12px;
-      }
-      input[type="text"] {
-        border: none;
-        padding: 8px 10px;
-        width: 100%;
-        outline: none;
-        font-size: 13px;
-        font-weight: 500;
-        color: var(--text);
-      }
+      label .label-icon { font-size: 16px; }
+
       input[type="file"] {
-        width: 100%;
-        padding: 8px;
-        border: 2px dashed var(--border);
-        border-radius: 8px;
-        cursor: pointer;
-        background: var(--bg);
-        transition: border-color 0.2s;
-        font-size: 13px;
+        width: 100%; padding: 14px 16px; border: 2px dashed #d0d8e3; border-radius: 14px;
+        cursor: pointer; background: #fafcff; font-size: 14px; color: #1e293b;
+        transition: border-color 0.2s, background 0.2s, box-shadow 0.2s; font-family: inherit;
       }
-      input[type="file"]:hover {
-        border-color: var(--primary);
-      }
+      input[type="file"]:hover { border-color: #0a2540; background: #f0f5ff; box-shadow: 0 2px 8px rgba(10, 37, 64, 0.06); }
+      input[type="file"]:focus { outline: none; border-color: #0a2540; box-shadow: 0 0 0 4px rgba(10, 37, 64, 0.08); }
+
+      /* ===== BOTONES ===== */
+      .action-bar { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-top: 8px; }
       button {
-        padding: 10px 16px;
-        border: none;
-        border-radius: 8px;
-        font-weight: 600;
-        font-size: 13px;
-        cursor: pointer;
-        transition: all 0.2s ease;
+        padding: 12px 28px; border: none; border-radius: 50px; font-weight: 600; font-size: 14px;
+        cursor: pointer; transition: all 0.2s ease; font-family: inherit; display: inline-flex;
+        align-items: center; justify-content: center; gap: 8px; letter-spacing: 0.2px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
       }
-      button:disabled { opacity: 0.5; cursor: not-allowed; }
-      .btn-primary { background: var(--primary); color: white; }
-      .btn-primary:hover:not(:disabled) { background: #1D39C4; }
-      .btn-success { background: var(--success); color: white; }
-      .btn-success:hover:not(:disabled) { background: #059669; }
-      .btn-cancel { background: #E2E8F0; color: #475569; }
-      .btn-cancel:hover { background: #CBD5E1; }
-      .flex-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+      button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+      button:active:not(:disabled) { transform: scale(0.96); }
+
+      .btn-primary { background: linear-gradient(145deg, #0a2540, #1a3a5c); color: #fff; box-shadow: 0 6px 16px -6px rgba(10, 37, 64, 0.3); }
+      .btn-primary:hover:not(:disabled) { background: linear-gradient(145deg, #0f2f4f, #1f4670); box-shadow: 0 10px 24px -10px rgba(10, 37, 64, 0.4); transform: translateY(-2px); }
+      
+      .btn-success { background: linear-gradient(145deg, #0b6e4f, #0f8b66); color: #fff; box-shadow: 0 6px 16px -6px rgba(11, 110, 79, 0.3); }
+      .btn-success:hover:not(:disabled) { background: linear-gradient(145deg, #0d7a58, #119a72); box-shadow: 0 10px 24px -10px rgba(11, 110, 79, 0.4); transform: translateY(-2px); }
+
+      .btn-cancel { background: #eef2f6; color: #1e293b; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02); }
+      .btn-cancel:hover:not(:disabled) { background: #e2e8f0; transform: translateY(-2px); box-shadow: 0 6px 12px rgba(0, 0, 0, 0.04); }
+
+      #statusArchivo { font-size: 13px; color: #64748b; font-weight: 500; background: #f1f5f9; padding: 6px 16px; border-radius: 50px; white-space: nowrap; }
+
+      /* ===== GRID DE USUARIOS ===== */
+      .user-grid-container {
+        max-height: 320px; overflow-y: auto; border-radius: 16px; border: 1px solid #e9edf2;
+        background: #fafcff; box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);
+      }
+      .user-grid-container::-webkit-scrollbar { width: 6px; }
+      .user-grid-container::-webkit-scrollbar-track { background: transparent; }
+      .user-grid-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+
+      .user-rows-list { display: flex; flex-direction: column; }
+      .user-row {
+        display: flex; align-items: center; gap: 16px; padding: 14px 18px;
+        background: #ffffff; border-bottom: 1px solid #f0f3f7; transition: background 0.15s;
+      }
+      .user-row:hover { background: #f8fafc; }
+      .user-row:last-child { border-bottom: none; }
+
+      .user-row-meta { display: flex; flex-direction: column; min-width: 180px; max-width: 200px; flex-shrink: 0; }
+      .user-row-mac { font-size: 14px; font-weight: 700; color: #0a2540; font-family: 'Inter', monospace; letter-spacing: -0.2px; }
+      .user-row-abonado { font-size: 12px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; font-weight: 500; }
+
+      .user-inputs { display: flex; gap: 12px; flex: 1; min-width: 0; }
+      .input-wrapper-half {
+        flex: 1; display: flex; align-items: center; border: 1px solid #dce2ea;
+        border-radius: 12px; overflow: hidden; background: #fff; transition: border-color 0.2s, box-shadow 0.2s; min-width: 0;
+      }
+      .input-wrapper-half:focus-within { border-color: #0a2540; box-shadow: 0 0 0 4px rgba(10, 37, 64, 0.08); }
+      .input-wrapper-half.valid { border-color: #0b6e4f; background: #f0faf6; }
+      .input-wrapper-half.valid:focus-within { box-shadow: 0 0 0 4px rgba(11, 110, 79, 0.12); }
+      .input-wrapper-half.invalid { border-color: #dc2626; background: #fef2f2; }
+      .input-wrapper-half.invalid:focus-within { box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.1); }
+
+      .prefix {
+        background: #f1f5f9; padding: 8px 14px; font-weight: 600; color: #475569;
+        border-right: 1px solid #dce2ea; font-size: 12px; white-space: nowrap; flex-shrink: 0;
+      }
+      .prefix .asterisk { color: #dc2626; margin-left: 2px; font-weight: 700; }
+      input[type="text"] {
+        border: none; padding: 10px 14px; width: 100%; outline: none; font-size: 14px;
+        color: #0a2540; font-family: 'Inter', sans-serif; background: transparent; min-width: 0;
+      }
+      input[type="text"]::placeholder { color: #a0aec0; font-weight: 400; }
+
+      /* ===== MENSAJES EN LÍNEA ===== */
       .message {
-        padding: 12px 16px; border-radius: 8px; font-size: 13px; margin-top: 12px;
-        line-height: 1.4; border: 1px solid transparent;
+        padding: 16px 20px; border-radius: 16px; font-size: 14px; margin-top: 12px;
+        background: #ffffff; border: 1px solid #e9edf2; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+        display: flex; align-items: center; gap: 12px;
       }
-      .error { background: var(--error-light); color: #B91C1C; border-color: #FCA5A5; }
-      .success { background: var(--success-light); color: #065F46; border-color: #A7F3D0; }
-      .warning { background: var(--warning-light); color: #92400E; border-color: #FDE68A; }
-      
+      .message .msg-icon { font-size: 20px; flex-shrink: 0; }
+      .error { border-left: 5px solid #dc2626; color: #991b1b; }
+      .success { border-left: 5px solid #0b6e4f; color: #065f46; }
+      .warning { border-left: 5px solid #f7b731; color: #92400e; }
+
+      /* ===== PREVISUALIZACIÓN ===== */
       #previewContainer {
-        max-height: 200px; overflow: auto; margin-top: 10px;
-        border: 1px solid var(--border); border-radius: 8px;
+        max-height: 280px; overflow: auto; border-radius: 16px; border: 1px solid #e9edf2; background: #fafcff;
       }
-      table { width: 100%; border-collapse: collapse; font-size: 11px; }
-      th { background: #F8FAFC; position: sticky; top: 0; font-weight: 600; color: var(--text-light); }
-      th, td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
-      
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th {
+        background: #f1f5f9; position: sticky; top: 0; font-weight: 700; color: #1e293b;
+        text-transform: uppercase; letter-spacing: 0.5px; font-size: 11px; padding: 12px 14px;
+        border-bottom: 2px solid #dce2ea; text-align: left;
+      }
+      td { padding: 12px 14px; border-bottom: 1px solid #eef2f6; white-space: nowrap; color: #1e293b; }
+      tbody tr:hover { background: #f8fafc; }
+      tbody tr:last-child td { border-bottom: none; }
+
+      /* ===== LOADER CHICO ===== */
       .loader {
-        display: inline-block;
-        width: 14px;
-        height: 14px;
-        border: 2px solid #e2e8f0;
-        border-top: 2px solid var(--primary);
-        border-radius: 50%;
-        animation: spin 0.8s linear infinite;
-        margin-right: 8px;
-        vertical-align: middle;
+        display: inline-block; width: 18px; height: 18px; border: 3px solid #e2e8f0;
+        border-top: 3px solid #0a2540; border-radius: 50%;
+        animation: spin 0.7s cubic-bezier(0.4, 0, 0.2, 1) infinite; margin-right: 8px; vertical-align: middle;
       }
+
+      /* ===== OVERLAY MODAL (NUEVO) ===== */
+      .overlay-modal {
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(10, 37, 64, 0.7); backdrop-filter: blur(4px);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 9999; opacity: 0; visibility: hidden; transition: all 0.3s ease;
+      }
+      .overlay-modal.active { opacity: 1; visibility: visible; }
+      
+      .overlay-card {
+        background: #ffffff; padding: 40px; border-radius: 24px; text-align: center;
+        box-shadow: 0 24px 48px rgba(0, 0, 0, 0.2); max-width: 420px; width: 90%;
+        display: flex; flex-direction: column; align-items: center; gap: 16px;
+        transform: scale(0.95); transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      }
+      .overlay-modal.active .overlay-card { transform: scale(1); }
+
+      .big-loader {
+        width: 60px; height: 60px; border: 5px solid #e2e8f0; border-top: 5px solid #0a2540;
+        border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 8px;
+      }
+      .overlay-icon { font-size: 56px; margin-bottom: 8px; }
+      .overlay-title { font-size: 20px; font-weight: 800; color: #0a2540; }
+      .overlay-text { font-size: 14px; color: #64748b; line-height: 1.5; }
+
       @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+      /* ===== FOOTER ===== */
+      .footer-signature {
+        text-align: center; margin-top: 24px; padding-top: 20px; font-size: 12px; color: #94a3b8;
+        font-weight: 500; letter-spacing: 1px; text-transform: uppercase; border-top: 1px solid rgba(0, 0, 0, 0.04); padding-bottom: 6px;
+      }
+      .footer-signature .author { font-weight: 700; color: #0a2540; letter-spacing: 0.5px; }
+      .footer-signature .merm {
+        display: block; margin-top: 4px; font-weight: 600; color: #f7b731; letter-spacing: 0.8px;
+        font-size: 11px; background: #fef9e7; padding: 4px 12px; border-radius: 50px;
+        display: inline-block; border: 1px solid #fdecc8;
+      }
+
+      /* ===== RESPONSIVE ===== */
+      @media (max-width: 700px) {
+        .app-container { padding: 0; }
+        .card { padding: 24px 16px; border-radius: 16px; }
+        .user-row { flex-wrap: wrap; gap: 12px; }
+        .user-row-meta { min-width: 100%; max-width: 100%; flex-direction: row; align-items: center; gap: 12px; }
+        .user-row-abonado { margin-top: 0; }
+        .user-inputs { width: 100%; flex-wrap: wrap; }
+        .input-wrapper-half { flex: 1 1 120px; }
+        .action-bar { flex-direction: column; align-items: stretch; }
+        button { justify-content: center; }
+        #statusArchivo { text-align: center; white-space: normal; }
+        .brand-header { flex-wrap: wrap; }
+        .brand-text h1 { font-size: 18px; }
+      }
+      @media (max-width: 480px) {
+        .user-row-meta { flex-direction: column; align-items: flex-start; gap: 4px; }
+        .input-wrapper-half { flex: 1 1 100%; }
+        .prefix { padding: 8px 10px; font-size: 11px; }
+        input[type="text"] { padding: 10px 12px; font-size: 13px; }
+        .card-header h3 { font-size: 17px; flex-wrap: wrap; }
+        .card-header h3 small { font-size: 12px; }
+      }
     </style>
   </head>
   <body>
-    <div class="card">
-      <h3>📤 Carga masiva de reporte</h3>
-      
-      <div class="instructions">
-        💡 <strong>Procedimiento:</strong> El sistema detectará automáticamente los registros a reportar. Identificá cada equipo por su MAC y completá el código de usuario U (6 dígitos) y el DNI (7 a 9 dígitos).
+    <div class="app-container">
+
+      <!-- Cabecera -->
+      <div class="brand-header">
+        <div class="brand-icon">LP</div>
+        <div class="brand-text">
+          <h1>Módulo de Carga Masiva</h1>
+          <span>Gestión de Nodos Anexo · LNPR</span>
+        </div>
       </div>
 
-      <div class="form-group">
-        <label>Archivo (.xlsx, .xls, .csv, .txt)</label>
-        <input type="file" id="archivo" accept=".xlsx,.xls,.csv,.txt,.tsv" />
+      <!-- Tarjeta 1: Carga de archivo -->
+      <div class="card">
+        <div class="card-header">
+          <h3>📁 Origen de datos <small>seleccione el archivo</small></h3>
+        </div>
+        <div class="instructions">
+          <strong>Procedimiento:</strong> El sistema detectará automáticamente los registros operativos.
+          Identifique el equipo mediante su <strong>MAC</strong> y asigne el <strong>ID Operador (6 dígitos)</strong>
+          y el <strong>Identificador (DNI/CUIT/CUIL, de 7 a 11 dígitos)</strong>.
+        </div>
+        <div class="form-group">
+          <label><span class="label-icon">📄</span> Archivo origen (.xlsx, .xls, .csv, .txt)</label>
+          <input type="file" id="archivo" accept=".xlsx,.xls,.csv,.txt,.tsv" />
+        </div>
+        <div class="action-bar">
+          <button id="btnValidar" class="btn-primary" disabled>🔍 Validar estructura</button>
+          <span id="statusArchivo" style="font-size:13px; color:#64748b; font-weight:500;"></span>
+        </div>
       </div>
 
-      <div class="flex-row" style="margin-bottom: 16px;">
-        <button id="btnValidar" class="btn-primary" disabled>🔍 Validar estructura</button>
-        <span id="statusArchivo" style="font-size:12px; color:var(--text-light);"></span>
-      </div>
-
-      <div class="form-group">
-        <label>Asignación de Datos Manuales (Requeridos para el reporte)</label>
+      <!-- Tarjeta 2: Asignación de datos -->
+      <div class="card">
+        <div class="card-header">
+          <h3>
+            ✏️ Asignación de datos
+            <small>complete cada registro</small>
+            <span class="required-badge">Obligatorio</span>
+          </h3>
+        </div>
         <div class="user-grid-container">
           <div class="user-rows-list" id="userInputsContainer">
-            <p style="font-size: 12px; color: var(--text-light); text-align: center; padding: 10px 0;">
-              Subí y valida un archivo para cargar los usuarios y DNIs.
+            <p style="font-size:14px; color:#94a3b8; text-align:center; padding:40px 0;">
+              Aguardando archivo para el despliegue de registros…
             </p>
           </div>
         </div>
       </div>
+
+      <!-- Mensajes -->
+      <div id="mensaje"></div>
+
+      <!-- Tarjeta 3: Previsualización -->
+      <div id="preview" style="display:none;" class="card">
+        <div class="card-header">
+          <h3>📋 Registros procesados <small>verifique y confirme</small></h3>
+        </div>
+        <div id="previewContainer">
+          <table id="tablaPreview"></table>
+        </div>
+        <div class="action-bar" style="margin-top:24px;">
+          <button id="btnGuardar" class="btn-success" disabled>✅ Confirmar y guardar</button>
+          <button id="btnCancelar" class="btn-cancel" onclick="resetearApp()">↺ Descartar</button>
+        </div>
+      </div>
+
+      <!-- Firma -->
+      <div class="footer-signature">
+        <div>Desarrollado por <span class="author">Padin Lautaro</span></div>
+        <span class="merm">🚀 Impulsado por Nodos MERM</span>
+      </div>
+
     </div>
 
-    <div id="mensaje"></div>
-
-    <div id="preview" style="display:none;" class="card">
-      <h4>Registros detectados para reportar (Unificados como CAIDO)</h4>
-      <div id="previewContainer"><table id="tablaPreview"></table></div>
-      <div class="flex-row" style="margin-top:16px;">
-        <button id="btnGuardar" class="btn-success" disabled>💾 Guardar en Historial</button>
-        <button id="btnCancelar" class="btn-cancel" onclick="cerrarVentana()">Cancelar</button>
+    <!-- OVERLAY DE CARGA Y RESULTADO -->
+    <div id="loadingOverlay" class="overlay-modal">
+      <div class="overlay-card">
+        <div id="overlayVisual" class="big-loader"></div>
+        <div id="overlayTitle" class="overlay-title">Procesando registros...</div>
+        <div id="overlayText" class="overlay-text">Por favor, aguarda y no cierres esta ventana. El sistema está subiendo la información.</div>
+        <button id="btnCerrarOverlay" class="btn-cancel" style="display:none; margin-top:16px; width:100%;" onclick="cerrarOverlay()">Cerrar</button>
       </div>
     </div>
 
     <script>
+      // ============================================================
+      //  SCRIPT - Overlay, Validación y Reseteo sin recargar
+      // ============================================================
+
       let datosParseados = null;
       let nombreArchivo = '';
       let numReportablesRequeridos = 0;
@@ -269,19 +344,55 @@
       const mensajeDiv = document.getElementById('mensaje');
       const statusArchivo = document.getElementById('statusArchivo');
 
-      function cerrarVentana() {
-        if (typeof google !== 'undefined' && google.script && google.script.host && google.script.host.close) {
-          google.script.host.close();
+      // Funciones del Overlay
+      function mostrarOverlay(titulo, texto, tipo) {
+        const overlay = document.getElementById('loadingOverlay');
+        const visual = document.getElementById('overlayVisual');
+        const title = document.getElementById('overlayTitle');
+        const text = document.getElementById('overlayText');
+        const btnCerrar = document.getElementById('btnCerrarOverlay');
+
+        title.textContent = titulo;
+        text.innerHTML = texto; // Usamos innerHTML por si hay tags <b>
+        overlay.classList.add('active');
+
+        if (tipo === 'cargando') {
+          visual.className = 'big-loader';
+          visual.textContent = '';
+          btnCerrar.style.display = 'none';
+        } else if (tipo === 'exito') {
+          visual.className = 'overlay-icon';
+          visual.textContent = '✅';
+          btnCerrar.style.display = 'none';
+        } else if (tipo === 'error') {
+          visual.className = 'overlay-icon';
+          visual.textContent = '❌';
+          btnCerrar.style.display = 'inline-flex';
         }
+      }
+
+      function cerrarOverlay() {
+        document.getElementById('loadingOverlay').classList.remove('active');
+      }
+
+      // Función para reiniciar la app
+      function resetearApp() {
+        archivoInput.value = '';
+        statusArchivo.textContent = '';
+        document.getElementById('preview').style.display = 'none';
+        mensajeDiv.innerHTML = '';
+        datosParseados = null;
+        generarInputsUsuarios(0);
+        btnValidar.disabled = true;
+        btnGuardar.disabled = true;
+        cerrarOverlay();
       }
 
       function obtenerIndiceCabecera(cabeceras, nombreEsperado) {
         const normEsperado = nombreEsperado.trim().toUpperCase().replace(/\s+/g, '');
         for (let i = 0; i < cabeceras.length; i++) {
           const normCabecera = String(cabeceras[i]).trim().toUpperCase().replace(/\s+/g, '');
-          if (normCabecera === normEsperado) {
-            return i;
-          }
+          if (normCabecera === normEsperado) return i;
         }
         return -1;
       }
@@ -291,11 +402,12 @@
       }
 
       function mostrarMensaje(texto, tipo, conLoader = false) {
+        const iconos = { error: '❌', success: '✅', warning: '⚠️' };
         let loaderHtml = conLoader ? '<span class="loader"></span>' : '';
-        mensajeDiv.innerHTML = `<div class="message ${tipo}">${loaderHtml}${texto}</div>`;
+        let iconHtml = conLoader ? '' : `<span class="msg-icon">${iconos[tipo] || ''}</span>`;
+        mensajeDiv.innerHTML = `<div class="message ${tipo}">${iconHtml}${loaderHtml}${texto}</div>`;
       }
 
-      // Generación dinámica de la fila de entradas mostrando la MAC y el Abonado de forma clara
       function generarInputsUsuarios(num, filasDatos, idxMac, idxAbonado, idxDni) {
         const container = document.getElementById('userInputsContainer');
         container.innerHTML = '';
@@ -303,11 +415,7 @@
         inputsDnis = [];
 
         if (num === 0) {
-          container.innerHTML = `
-            <p style="font-size: 12px; color: var(--text-light); text-align: center; padding: 10px 0;">
-              No hay registros requeridos.
-            </p>
-          `;
+          container.innerHTML = `<p style="font-size:14px; color:#94a3b8; text-align:center; padding:40px 0;">No se encontraron registros reportables en el archivo.</p>`;
           numReportablesRequeridos = 0;
           actualizarBotonGuardar();
           return;
@@ -322,7 +430,7 @@
           const rowDiv = document.createElement('div');
           rowDiv.className = 'user-row';
           rowDiv.id = `row-user-${i}`;
-          
+
           rowDiv.innerHTML = `
             <div class="user-row-meta">
               <span class="user-row-mac">${escapar(mac)}</span>
@@ -330,81 +438,65 @@
             </div>
             <div class="user-inputs">
               <div class="input-wrapper-half">
-                <span class="prefix">DNI</span>
-                <input type="text" id="userDni${i}" placeholder="DNI manual" maxlength="9" pattern="\\d{7,9}" inputmode="numeric" />
+                <span class="prefix"> Identificador <span class="asterisk">*</span></span>
+                <input type="text" id="userDni${i}" placeholder="7 a 11 dígitos *" maxlength="11" pattern="\\d{7,11}" inputmode="numeric" />
               </div>
               <div class="input-wrapper-half">
-                <span class="prefix">U</span>
-                <input type="text" id="userCode${i}" placeholder="Usuario U" maxlength="6" pattern="\\d{6}" inputmode="numeric" />
+                <span class="prefix"> U <span class="asterisk">*</span></span>
+                <input type="text" id="userCode${i}" placeholder="6 dígitos *" maxlength="6" pattern="\\d{6}" inputmode="numeric" />
               </div>
             </div>
           `;
-          
+
           container.appendChild(rowDiv);
-          
+
           const inputU = rowDiv.querySelector(`#userCode${i}`);
           const inputDni = rowDiv.querySelector(`#userDni${i}`);
-          
+
           inputsUsuarios.push(inputU);
           inputsDnis.push(inputDni);
 
-          // Listener para validar el Usuario U y actualizar la tabla
           inputU.addEventListener('input', function() {
-            this.value = this.value.replace(/\D/g, ''); 
+            this.value = this.value.replace(/\D/g, '');
             const wrapper = this.closest('.input-wrapper-half');
             if (/^\d{6}$/.test(this.value)) {
               wrapper.classList.remove('invalid');
               wrapper.classList.add('valid');
             } else {
               wrapper.classList.remove('valid');
-              if (this.value.length > 0) {
-                wrapper.classList.add('invalid');
-              } else {
-                wrapper.classList.remove('invalid');
-              }
+              if (this.value.length > 0) wrapper.classList.add('invalid');
+              else wrapper.classList.remove('invalid');
             }
             actualizarUsuarioEnTabla(i - 1, this.value);
             actualizarBotonGuardar();
           });
 
-          // Listener para validar el DNI manual y actualizar la tabla
           inputDni.addEventListener('input', function() {
-            this.value = this.value.replace(/\D/g, ''); 
+            this.value = this.value.replace(/\D/g, '');
             const wrapper = this.closest('.input-wrapper-half');
-            if (/^\d{7,9}$/.test(this.value)) {
+            if (/^\d{7,11}$/.test(this.value)) {
               wrapper.classList.remove('invalid');
               wrapper.classList.add('valid');
             } else {
               wrapper.classList.remove('valid');
-              if (this.value.length > 0) {
-                wrapper.classList.add('invalid');
-              } else {
-                wrapper.classList.remove('invalid');
-              }
+              if (this.value.length > 0) wrapper.classList.add('invalid');
+              else wrapper.classList.remove('invalid');
             }
             actualizarDniEnTabla(i - 1, this.value);
             actualizarBotonGuardar();
           });
 
-          // Autofilar si ya viene en el Excel y es válido
-          if (dniOriginal && /^\d{7,9}$/.test(dniOriginal)) {
-            inputDni.value = dniOriginal;
-            inputDni.closest('.input-wrapper-half').classList.add('valid');
-            setTimeout(() => {
-              actualizarDniEnTabla(i - 1, dniOriginal);
-              actualizarBotonGuardar();
-            }, 10);
+          if (dniOriginal) {
+            const dniLimpio = dniOriginal.replace(/\D/g, '');
+            if (/^\d{7,11}$/.test(dniLimpio)) {
+              inputDni.value = dniLimpio;
+              inputDni.closest('.input-wrapper-half').classList.add('valid');
+              setTimeout(() => {
+                actualizarDniEnTabla(i - 1, dniLimpio);
+                actualizarBotonGuardar();
+              }, 10);
+            }
           }
-
-          // Foco e iluminación
-          [inputU, inputDni].forEach(inp => {
-            inp.addEventListener('focus', function() {
-              this.closest('.input-wrapper-half').classList.add('focus');
-            });
-            inp.addEventListener('blur', function() {
-              this.closest('.input-wrapper-half').classList.remove('focus');
-            });
-          });
         }
 
         numReportablesRequeridos = num;
@@ -419,7 +511,7 @@
           for (let i = 0; i < numReportablesRequeridos; i++) {
             const valU = inputsUsuarios[i].value.trim();
             const valDni = inputsDnis[i].value.trim();
-            if (!/^\d{6}$/.test(valU) || !/^\d{7,9}$/.test(valDni)) {
+            if (!/^\d{6}$/.test(valU) || !/^\d{7,11}$/.test(valDni)) {
               todosValidos = false;
               break;
             }
@@ -430,22 +522,18 @@
 
       function actualizarUsuarioEnTabla(index, valor) {
         const celda = document.getElementById(`celda-user-${index}`);
-        if (celda) {
-          celda.textContent = valor ? 'U' + valor : 'U-';
-        }
+        if (celda) celda.textContent = valor ? 'U' + valor : 'Pendiente';
       }
 
       function actualizarDniEnTabla(index, valor) {
         const celda = document.getElementById(`celda-dni-${index}`);
-        if (celda) {
-          celda.textContent = valor ? valor : '';
-        }
+        if (celda) celda.textContent = valor ? valor : 'Pendiente';
       }
 
       archivoInput.addEventListener('change', function() {
         if (this.files.length > 0) {
           nombreArchivo = this.files[0].name;
-          statusArchivo.textContent = '📄 ' + nombreArchivo;
+          statusArchivo.textContent = '📎 ' + nombreArchivo;
         } else {
           statusArchivo.textContent = '';
         }
@@ -460,7 +548,7 @@
         const file = archivoInput.files[0];
         if (!file) return;
         btnValidar.disabled = true;
-        mostrarMensaje('Analizando estructura del archivo...', 'success', true);
+        mostrarMensaje('Procesando datos del archivo…', 'success', true);
 
         const reader = new FileReader();
         const ext = file.name.split('.').pop().toLowerCase();
@@ -470,9 +558,7 @@
             const texto = e.target.result;
             const lineas = texto.split(/\r?\n/).filter(l => l.trim() !== '');
             const datos = lineas.map(linea => linea.split('\t'));
-            for (let i = 0; i < datos.length; i++) {
-              datos[i] = datos[i].map(c => c.trim());
-            }
+            for (let i = 0; i < datos.length; i++) datos[i] = datos[i].map(c => c.trim());
             const datosFiltrados = [datos[0]].concat(datos.slice(1).filter(fila => fila.some(cell => cell && cell !== "")));
             validarConServidor(datosFiltrados);
           };
@@ -485,8 +571,7 @@
               const firstSheet = workbook.SheetNames[0];
               const worksheet = workbook.Sheets[firstSheet];
               let aoa = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '', raw: true });
-              if (aoa.length === 0) throw new Error('El archivo no contiene datos.');
-              
+              if (aoa.length === 0) throw new Error('El archivo está vacío.');
               aoa = aoa.map(fila => fila.map(c => (c === null || c === undefined ? '' : String(c).trim())));
               const datosFiltrados = [aoa[0]].concat(aoa.slice(1).filter(fila => fila.some(cell => cell && cell !== "")));
               validarConServidor(datosFiltrados);
@@ -500,57 +585,47 @@
       });
 
       function validarConServidor(datos) {
-        if (typeof google !== 'undefined' && google.script && google.script.run) {
-          google.script.run
-            .withSuccessHandler(function(resp) {
-              btnValidar.disabled = false;
-              if (resp.ok) {
-                datosParseados = datos;
-                
-                const cabecera = datos[0];
-                const idxCaliFCPE = obtenerIndiceCabecera(cabecera, "CALI F_CPE_SCORE");
-                const idxDni = obtenerIndiceCabecera(cabecera, "DNI");
-                const idxMac = obtenerIndiceCabecera(cabecera, "MAC");
-                const idxAbonado = obtenerIndiceCabecera(cabecera, "ABONADO");
-                
-                let filasReportables = [];
-                for (let i = 1; i < datos.length; i++) {
-                  filasReportables.push(datos[i]);
-                }
-                
-                const totalReportables = filasReportables.length;
-                
-                if (totalReportables === 0) {
-                  mostrarMensaje('⚠️ El archivo no contiene ningún registro para reportar (todos los registros tienen score "OK").', 'warning');
-                  document.getElementById('preview').style.display = 'none';
-                  generarInputsUsuarios(0);
-                } else {
-                  mostrarMensaje(`✔ Estructura correcta. Se detectaron ${totalReportables} registros a reportar.`, 'success');
-                  generarInputsUsuarios(totalReportables, filasReportables, idxMac, idxAbonado, idxDni);
-                  mostrarPreview(filasReportables, cabecera);
-                  document.getElementById('preview').style.display = 'block';
-                }
-              } else {
+        google.script.run
+          .withSuccessHandler(function(resp) {
+            btnValidar.disabled = false;
+            if (resp.ok) {
+              datosParseados = datos;
+              const cabecera = datos[0];
+              const idxDni = obtenerIndiceCabecera(cabecera, "DNI");
+              const idxMac = obtenerIndiceCabecera(cabecera, "MAC");
+              const idxAbonado = obtenerIndiceCabecera(cabecera, "ABONADO");
+
+              let filasReportables = [];
+              for (let i = 1; i < datos.length; i++) filasReportables.push(datos[i]);
+              const totalReportables = filasReportables.length;
+
+              if (totalReportables === 0) {
+                mostrarMensaje('Atención: El archivo no contiene registros aptos para ser reportados.', 'warning');
                 document.getElementById('preview').style.display = 'none';
                 generarInputsUsuarios(0);
-                mostrarMensaje(resp.error, 'error');
+              } else {
+                mostrarMensaje(`✅ Validación exitosa. Se procesarán ${totalReportables} registros.`, 'success');
+                generarInputsUsuarios(totalReportables, filasReportables, idxMac, idxAbonado, idxDni);
+                mostrarPreview(filasReportables, cabecera);
+                document.getElementById('preview').style.display = 'block';
               }
-            })
-            .withFailureHandler(function(err) {
-              btnValidar.disabled = false;
-              mostrarMensaje('Error de validación: ' + err.message, 'error');
-            })
-            .validarEstructura(datos);
-        } else {
-          btnValidar.disabled = false;
-          mostrarMensaje('Modo Vista Previa Local', 'success');
-        }
+            } else {
+              document.getElementById('preview').style.display = 'none';
+              generarInputsUsuarios(0);
+              mostrarMensaje(resp.error, 'error');
+            }
+          })
+          .withFailureHandler(function(err) {
+            btnValidar.disabled = false;
+            mostrarMensaje('Fallo de validación: ' + err.message, 'error');
+          })
+          .validarEstructura(datos);
       }
 
       function mostrarPreview(filas, cabecera) {
         const tabla = document.getElementById('tablaPreview');
-        const cabecerasAMostrar = ["Usuario Asignado", "DNI", "MAC", "ABONADO", "CALLE", "ALTURA", "NODO/AREA", "MODELO", "ESTADO"];
-        
+        const cabecerasAMostrar = ["ID Operador", "Identificador", "MAC Address", "Abonado", "Calle", "Altura", "Nodo Operativo", "Equipo", "Estado"];
+
         const idxMac = obtenerIndiceCabecera(cabecera, "MAC");
         const idxAbonado = obtenerIndiceCabecera(cabecera, "ABONADO");
         const idxCalle = obtenerIndiceCabecera(cabecera, "CALLE");
@@ -562,7 +637,7 @@
         let html = '<thead><tr>';
         cabecerasAMostrar.forEach(col => html += '<th>' + escapar(col) + '</th>');
         html += '</tr></thead><tbody>';
-        
+
         for (let i = 0; i < filas.length; i++) {
           const fila = filas[i];
           const mac = idxMac !== -1 ? (fila[idxMac] || "") : "";
@@ -572,10 +647,10 @@
           const areaService = idxNodo !== -1 ? (fila[idxNodo] || "") : "";
           const modelo = idxModelo !== -1 ? (fila[idxModelo] || "") : "";
           const estado = idxEstado !== -1 ? (fila[idxEstado] || "") : "";
-          
+
           html += '<tr>';
-          html += `<td id="celda-user-${i}" style="font-weight:700; color:var(--primary);">U-</td>`;
-          html += `<td id="celda-dni-${i}" style="font-weight:700; color:var(--text);"></td>`;
+          html += `<td id="celda-user-${i}" style="font-weight:600; color:#0a2540;">Pendiente</td>`;
+          html += `<td id="celda-dni-${i}" style="font-weight:600; color:#1e293b;">Pendiente</td>`;
           html += '<td>' + escapar(mac) + '</td>';
           html += '<td>' + escapar(abonado) + '</td>';
           html += '<td>' + escapar(calle) + '</td>';
@@ -591,7 +666,7 @@
 
       btnGuardar.addEventListener('click', () => {
         if (!datosParseados) return;
-        
+
         const userCodes = [];
         const userDnis = [];
         for (let i = 0; i < numReportablesRequeridos; i++) {
@@ -600,46 +675,38 @@
         }
 
         btnGuardar.disabled = true;
-        mostrarMensaje('Guardando datos e insertando reporte...', 'success', true);
+        
+        // MOSTRAR POPUP DE CARGA
+        mostrarOverlay('Procesando y Guardando...', 'Esto puede tomar unos segundos. <br>Por favor, <b>no actualices</b> la página.', 'cargando');
 
-        if (typeof google !== 'undefined' && google.script && google.script.run) {
-          google.script.run
-            .withSuccessHandler(function(resp) {
-              btnGuardar.disabled = false;
-              if (resp.ok) {
-                let html = '';
-                if (resp.ignoradosOK && resp.ignoradosOK > 0) {
-                  html = `<div class="message warning">⚠️ Se ignoraron ${resp.ignoradosOK} registros porque su SCORE es "OK" (no enviados al destino).</div>`;
-                  if (resp.detallesPorNodo && Object.keys(resp.detallesPorNodo).length) {
-                    html += `<div class="message warning"><strong>Detalle de ignorados por nodo:</strong><ul>`;
-                    for (const [nodo, cant] of Object.entries(resp.detallesPorNodo)) {
-                      html += `<li>${nodo}: ${cant} registro(s)</li>`;
-                    }
-                    html += `</ul></div>`;
-                  }
-                  html += `<div class="message success">✔ Se guardó el historial con éxito.</div>`;
-                } else {
-                  html = `<div class="message success">✔ Proceso finalizado. Se reportaron los ${resp.filasGuardadas} registros con éxito.</div>`;
-                }
-                mensajeDiv.innerHTML = html;
-                setTimeout(() => cerrarVentana(), 4000);
-              } else {
-                mostrarMensaje('❌ ' + resp.error, 'error');
+        google.script.run
+          .withSuccessHandler(function(resp) {
+            btnGuardar.disabled = false;
+            if (resp.ok) {
+              
+              // MOSTRAR POPUP DE ÉXITO
+              let msjExito = `Se integraron <b>${resp.filasGuardadas}</b> registros correctamente.`;
+              if (resp.ignoradosOK && resp.ignoradosOK > 0) {
+                 msjExito += `<br><span style="color:#eab308; font-size:13px;">(Se omitieron ${resp.ignoradosOK} ya operativos)</span>`;
               }
-            })
-            .withFailureHandler(function(err) {
-              btnGuardar.disabled = false;
-              mostrarMensaje('Error en el servidor: ' + err.message, 'error');
-            })
-            .guardarEnHistorial(datosParseados, userCodes, userDnis, nombreArchivo);
-        } else {
-          btnGuardar.disabled = false;
-          mostrarMensaje('✔ (Modo vista previa sin Apps Script)', 'success');
-        }
+              mostrarOverlay('¡Operación Exitosa!', msjExito, 'exito');
+              
+              // Limpiar app y ocultar overlay a los 4 segundos
+              setTimeout(() => resetearApp(), 4000);
+              
+            } else {
+              mostrarOverlay('Error al guardar', resp.error, 'error');
+            }
+          })
+          .withFailureHandler(function(err) {
+            btnGuardar.disabled = false;
+            mostrarOverlay('Excepción del servidor', err.message, 'error');
+          })
+          .guardarEnHistorial(datosParseados, userCodes, userDnis, nombreArchivo);
       });
 
       function escapar(s) {
-        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
       }
     </script>
   </body>

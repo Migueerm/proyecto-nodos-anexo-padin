@@ -1,98 +1,112 @@
 # 📚 Documentación Técnica Completa - Proyecto Nodos TECO
 
-Este documento contiene la especificación completa, la guía de despliegue y la referencia de código de ambas ramas del proyecto (**`main`** de producción y **`dev`** de desarrollo web).
+Este documento contiene la especificación técnica completa, la guía de seguridad/control de acceso, la arquitectura de interfaz y la referencia de despliegue para la versión de producción validada del **Módulo de Carga Masiva de Reportes de Nodos**.
 
 ---
 
-## 📂 1. Estructura del Repositorio y Ramas
+## 📂 1. Estructura del Repositorio
 
 ```
 proyecto nodos teco/
 │
-├── main (Rama de Producción Protegida)
-│   ├── CargaMasivaReportes.gs     --> Backend original ligado al Sheet
-│   ├── Dialogo.html               --> Interfaz modal HTML original de producción
-│   ├── nodo.txt                   --> Algoritmo de monitoreo y alertas por nodo
-│   ├── ALERTAS POR NODOS...txt    --> Triggers de ejecución en minutos pares y bloqueos nocturnos
-│   └── README.md                  --> Guía general de arquitectura
-│
-└── dev (Rama de Desarrollo para Web App Aislada)
-    ├── CargaMasivaReportes.gs     --> Backend con getAppSpreadsheet() y doGet() para Web App
-    ├── Dialogo.html               --> Interfaz HTML responsiva con asignación masiva e integración dual
-    ├── nodo.txt                   --> Algoritmo de monitoreo y alertas por nodo
-    ├── ALERTAS POR NODOS...txt    --> Triggers y ventana de limpieza
-    ├── DOCUMENTACION_PROYECTO.md  --> Documentación detallada del proyecto
-    └── README.md                  --> Guía de arquitectura actualizada
+├── CargaMasivaReportes.gs     --> Backend Apps Script con control de acceso y lógica de persistencia
+├── Dialogo.html               --> Interfaz Web/Modal responsiva con overlay dinámico e ingesta de datos
+├── nodo.txt                   --> Algoritmo de monitoreo y alertas por nodo
+├── ALERTAS POR NODOS...txt    --> Triggers de ejecución en minutos pares y bloqueos nocturnos
+├── DOCUMENTACION_PROYECTO.md  --> Documentación técnica detallada (este archivo)
+└── README.md                  --> Resumen de arquitectura y guía rápida
 ```
 
 ---
 
-## 🔁 2. Comandos para Alternar entre Ramas
+## 🔒 2. Control de Acceso y Lista Blanca de Correos (`MAILS_AUTORIZADOS`)
 
-Para cambiar de versión en cualquier momento desde la terminal en `C:\Users\migue\Desktop\proyecto nodos teco`:
+En el punto de entrada web (`doGet`), el sistema implementa una capa de seguridad basada en lista blanca de correos electrónicos autorizados (`@konecta.com`).
 
-* **Ver rama activa**:
-  ```bash
-  git branch
-  ```
-* **Ir a la versión de Producción (`main`)**:
-  ```bash
-  git checkout main
-  ```
-* **Ir a la versión de Desarrollo Web App (`dev`)**:
-  ```bash
-  git checkout dev
-  ```
+### Funcionamiento:
+1. Obtenemos el correo del usuario activo a través de `Session.getActiveUser().getEmail()`.
+2. Validamos la coincidencia (sin distinguir mayúsculas/minúsculas) contra el arreglo `MAILS_AUTORIZADOS`.
+3. **Usuario NO Autorizado**: Se retorna una pantalla estandarizada de **"Acceso Denegado ❌"** informando que el correo no tiene permisos y deteniendo la renderización del formulario.
+4. **Usuario Autorizado**: Se renderiza la plantilla `Dialogo.html` en modo Web App o Modal Dialog.
 
----
-
-## ⚡ 3. Comparativa de Código: `main` vs `dev`
-
-### A. Diferencias en `CargaMasivaReportes.gs`
-
-| Característica | Rama `main` (Producción) | Rama `dev` (Web App) |
-| :--- | :--- | :--- |
-| **Punto de Entrada Web** | No disponible (`onOpen` en Sheet únicamente) | Disponible mediante `doGet(e)` |
-| **Referencia a Planilla** | `SpreadsheetApp.getActiveSpreadsheet()` | `getAppSpreadsheet()` (Detecta si corre desde Sheet o desde URL Web) |
-| **Manejo de Errores UI** | Asume contenedor gráfico abierto | Bloques `try/catch` defensivos si corre fuera de Sheets |
-| **Serialización de Arrays** | Estándar | Sanitizado tolerante a celdas vacías/nulas |
-
-### B. Diferencias en `Dialogo.html`
-
-| Característica | Rama `main` (Producción) | Rama `dev` (Web App) |
-| :--- | :--- | :--- |
-| **Estilo Visual** | CSS Outfit clásico de producción | CSS Outfit enriquecido con barra de modo seguro |
-| **Asignación de Datos** | Casillas individuales por fila | Casillas individuales + Barra de autocompletado masivo (`⚡ Asignación Masiva`) |
-| **Cierre de Ventana** | `google.script.host.close()` directo | `cerrarVentana()` defensivo (compatible con navegador web y modal) |
+```javascript
+const MAILS_AUTORIZADOS = [
+  "miguel.rojasm@konecta.com",
+  "lautaro.padin@konecta.com",
+  "ailen.vosahlo@konecta.com",
+  "camila.magnaterra@konecta.com",
+  "daniel.bravo@konecta.com",
+  "elias.stessens@konecta.com",
+  "franco.alegranza@konecta.com",
+  "ivan.mora@konecta.com",
+  "ivana.piutri@konecta.com",
+  "jonatan.vazquez@konecta.com",
+  "juan.barboza@konecta.com",
+  "karen.morales@konecta.com",
+  "kevin.arce@konecta.com",
+  "lourdes.villarreal@konecta.com",
+  "nicolas.andrada@konecta.com",
+  "octavio.nunez@konecta.com",
+  "rociot.diaz@konecta.com",
+  "sergio.gragera@konecta.com",
+  "tomas.arroyo@konecta.com",
+  "alan.simes@konecta.com"
+];
+```
 
 ---
 
-## 🛠️ 4. Guía de Despliegue en Google Apps Script
+## 🎨 3. Arquitectura y Experiencia de Usuario (`Dialogo.html`)
 
-### Opción A: Ejecución como Menú en Google Sheets (Modal Dialog)
-1. Abrir la planilla de Google Sheets.
-2. Ir a **Extensiones > Apps Script**.
-3. Pegar los archivos `CargaMasivaReportes.gs` y `Dialogo.html`.
-4. Al abrir o recargar la planilla, aparecerá el menú `📤 Carga de archivos > 📄 Subir archivo`.
+La interfaz HTML5 implementa las siguientes mejoras de UX/UI en producción:
 
-### Opción B: Ejecución como Web App Independiente (Recomendado para Seguridad)
+1. **Overlay Modal Interactivo (`#loadingOverlay`)**:
+   - Muestra un spinner animado durante el procesamiento de datos ("Procesando y Guardando...").
+   - Al finalizar, despliega un ícono de estado (✅ Éxito / ❌ Error) con resumen del lote insertado.
+   - Ocultamiento y reseteo automático a los 4 segundos tras una confirmación exitosa.
+
+2. **Reseteo de Estado Inteligente (`resetearApp()`)**:
+   - Limpia inputs de archivo, grilla de asignación de datos y previsualización de tabla.
+   - Habilita/deshabilita botones según el estado de validación sin recargar la página del navegador.
+
+3. **Asignación de Datos por Registro**:
+   - Cada equipo reportable muestra su **MAC** y **Abonado**.
+   - Campos requeridos por fila: **Identificador (DNI/CUIT/CUIL, 7 a 11 dígitos)** e **ID Operador / U (6 dígitos)**.
+   - Validación visual en tiempo real (bordes verdes para campos válidos y rojos para inválidos).
+
+---
+
+## ⚡ 4. Backend y Motor de Datos (`CargaMasivaReportes.gs`)
+
+1. **Mapeo Automático de Servicios (`SERVICIO_MAP`)**:
+   - Clasifica los equipos ingresados según su modelo en: `Internet HFC`, `Flow` e `Internet FTTH`.
+
+2. **Concurrencia Segura con `LockService`**:
+   - Implementa `LockService.getDocumentLock()` / `LockService.getScriptLock()` con un tiempo de espera de 15 segundos para evitar escrituras simultáneas sobre la planilla local y externa.
+
+3. **Estructura de Hojas Administradas**:
+   - **`Historial`**: Registro acumulativo ordenado según `ENCABEZADOS_HISTORIAL`.
+   - **`UltimaCarga`**: Reemplazo completo del contenido con el último lote procesado.
+   - **`UltimoReportado`**: Matriz simplificada de 12 columnas enviada a la hoja de destino.
+   - **`RegistroCargas`**: Bitácora con timestamp, usuario, mail, archivo y total de filas.
+   - **`UltimoResumen`**: Conteo consolidado de incidencias por `NODO` (`AREA SERVICE`) y `ESTADO`.
+
+4. **Escritura Remota en Hoja `Historico`**:
+   - Abre la planilla principal definida por `SPREADSHEET_ID_LOCAL` e inserta los registros formateados en la hoja `Historico`.
+
+---
+
+## 🛠️ 5. Guía de Despliegue en Google Apps Script
+
+### Opción A: Web App (Recomendado para producción)
 1. En Google Apps Script, ir a **Desplegar > Nueva implementación**.
-2. Seleccionar el tipo **Aplicación web**.
-3. Configurar:
-   * **Ejecutar como**: *Tu cuenta de usuario*.
-   * **Quién tiene acceso**: *Cualquier persona dentro de tu organización*.
-4. Hacer clic en **Desplegar**.
-5. Copiar la **URL de la aplicación web** generada (`.../exec`).
-6. Compartir esa URL a los operadores: ellos podrán cargar archivos desde la web sin ver ni modificar las celdas de la planilla.
+2. Seleccionar **Aplicación web**.
+3. Configuración:
+   - **Ejecutar como**: *Tu cuenta de usuario*.
+   - **Quién tiene acceso**: *Cualquier persona dentro de la organización*.
+4. Hacer clic en **Desplegar** y copiar la URL Web App (`.../exec`).
+5. La URL verificará automáticamente el correo del usuario contra `MAILS_AUTORIZADOS`.
 
----
-
-## 🔒 5. Hojas y Formato de Almacenamiento
-
-El sistema gestiona de manera automática las siguientes 5 hojas en la planilla local:
-
-1. **`Historial`**: Almacena todos los datos alineados a `ENCABEZADOS_HISTORIAL`.
-2. **`UltimaCarga`**: Se sobrescribe en cada carga con los registros del último lote procesado.
-3. **`UltimoReportado`**: Formato de 12 columnas unificado enviado a la hoja externa.
-4. **`RegistroCargas`**: Bitácora de transacciones (Fecha/Hora, Usuario, Mail, Archivo, Registros, Estado).
-5. **`UltimoResumen`**: Métrica de cantidad de reportes agrupados por `NODO` (`AREA SERVICE`) y `ESTADO`.
+### Opción B: Menú en Google Sheets
+1. Al abrir la planilla vinculada, el activador `onOpen()` crea el menú superior **`📤 Carga de archivos > 📄 Subir archivo`**.
+2. Abre la ventana modal directamente dentro del entorno de Sheets.

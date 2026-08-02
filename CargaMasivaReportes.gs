@@ -1,5 +1,30 @@
+// -------------------- LISTA BLANCA DE CORREOS --------------------
+// Coloca aquí los correos de las personas autorizadas (en minúsculas)
+const MAILS_AUTORIZADOS = [
+  "miguel.rojasm@konecta.com",       // Siempre inclúyete a ti mismo
+  "lautaro.padin@konecta.com",
+  "ailen.vosahlo@konecta.com",
+  "camila.magnaterra@konecta.com",
+  "daniel.bravo@konecta.com",
+  "elias.stessens@konecta.com",
+  "franco.alegranza@konecta.com",
+  "ivan.mora@konecta.com",
+  "ivana.piutri@konecta.com",
+  "jonatan.vazquez@konecta.com",
+  "juan.barboza@konecta.com",
+  "karen.morales@konecta.com",
+  "kevin.arce@konecta.com",
+  "lourdes.villarreal@konecta.com",
+  "nicolas.andrada@konecta.com",
+  "octavio.nunez@konecta.com",
+  "rociot.diaz@konecta.com",
+  "sergio.gragera@konecta.com",
+  "tomas.arroyo@konecta.com",
+  "alan.simes@konecta.com",
+];
+
 // -------------------- ID DE LA PLANILLA DE TRABAJO --------------------
-// ID de la planilla principal para funcionamiento tanto desde el Sheet como desde la Web App (doGet)
+// ID de la planilla principal para almacenamiento local (Historial, UltimaCarga, etc.)
 const SPREADSHEET_ID_LOCAL = '1-TfFDqea0OkGlQrQdls_3NxMqlQrK8HMieGwPWdLvIo';
 
 /**
@@ -15,12 +40,30 @@ function getAppSpreadsheet() {
   return SpreadsheetApp.openById(SPREADSHEET_ID_LOCAL);
 }
 
-// -------------------- DESPLIEGUE WEB APP --------------------
+// -------------------- DESPLIEGUE WEB APP CON CONTROL DE ACCESO --------------------
 function doGet(e) {
+  // Obtenemos el mail de la persona que está intentando abrir el link
+  const usuarioActual = Session.getActiveUser().getEmail();
+
+  // Validamos si el usuario actual está en la lista de permitidos
+  const estaAutorizado = MAILS_AUTORIZADOS.some(mail => mail.toLowerCase() === usuarioActual.toLowerCase());
+
+  if (!estaAutorizado) {
+    // Si NO está en la lista, mostramos un mensaje de error y NO cargamos el HTML
+    return HtmlService.createHtmlOutput(`
+      <div style="font-family: 'Inter', sans-serif; text-align: center; margin-top: 60px; color: #1e293b;">
+        <h2 style="color: #dc2626;">Acceso Denegado ❌</h2>
+        <p>El correo <b>${usuarioActual || "no identificado"}</b> no tiene permisos para acceder a este módulo.</p>
+        <p>Por favor, comunícate con el administrador para solicitar acceso.</p>
+      </div>
+    `).setTitle('Acceso Restringido');
+  }
+
+  // Si SÍ está en la lista, le mostramos el formulario normalmente
   return HtmlService.createHtmlOutputFromFile('Dialogo')
     .setTitle('📤 Carga Masiva de Reporte')
-    .setFaviconUrl('https://www.google.com/favicon.ico') 
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1'); 
+    .setFaviconUrl('https://www.google.com/favicon.ico')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
 // Helper para buscar índices de columnas de manera insensible a mayúsculas/minúsculas y espacios
@@ -38,12 +81,12 @@ function obtenerIndiceCabecera(cabeceras, nombreEsperado) {
 
 // Estructura fija requerida en la hoja Historial y UltimaCarga local
 const ENCABEZADOS_HISTORIAL = [
-  "FECHA_HORA_CARGA", "USUARIO", "USUARIO_MAIL", "DNI", "MAC", "ABONADO", "ALTURA", "CALLE", 
-  "AREA SERVICE", "MODELO", "SERVICIO_AFECTADO", "PISO", "DPTO", "ESTADO", "DOCSIS VERSION", 
-  "US TX", "US RX", "US SNR", "US CER", "US CCER", "DS RX", "DS MER", "DS SNR", "DS CER", "DS CCER", 
-  "LAST STATUS DOWN", "SCORE", "SEMANA SCORE", "FECHA SCORE", "CALI F_CPE_SCORE", "LNG", "LAT", 
-  "CEI", "CMTS", "HUB", "LOCALIDAD", "PROVINCIA", "SERVICE ACCOUNT", "SERVICIO", "VELOCIDAD", 
-  "MARCA", "SW VERSION", "HW VERSION", "IP", "TIP O_DOMIC", "COD E_ZIP", "PAQUET E_ADQUIRIDO", 
+  "FECHA_HORA_CARGA", "USUARIO", "USUARIO_MAIL", "DNI", "MAC", "ABONADO", "ALTURA", "CALLE",
+  "AREA SERVICE", "MODELO", "SERVICIO_AFECTADO", "PISO", "DPTO", "ESTADO", "DOCSIS VERSION",
+  "US TX", "US RX", "US SNR", "US CER", "US CCER", "DS RX", "DS MER", "DS SNR", "DS CER", "DS CCER",
+  "LAST STATUS DOWN", "SCORE", "SEMANA SCORE", "FECHA SCORE", "CALI F_CPE_SCORE", "LNG", "LAT",
+  "CEI", "CMTS", "HUB", "LOCALIDAD", "PROVINCIA", "SERVICE ACCOUNT", "SERVICIO", "VELOCIDAD",
+  "MARCA", "SW VERSION", "HW VERSION", "IP", "TIP O_DOMIC", "COD E_ZIP", "PAQUET E_ADQUIRIDO",
   "VELO C_DESCARGA", "VELO C_SUBIDA", "NU M_SERIAL_EQUIPO", "OUTAGE"
 ];
 
@@ -101,12 +144,12 @@ function onOpen() {
 
 function configurarHojas() {
   const ss = getAppSpreadsheet();
-  
+
   let hist = ss.getSheetByName('Historial');
   if (!hist) hist = ss.insertSheet('Historial');
   hist.setFrozenRows(1);
   protegerHoja(hist, 'Solo script puede escribir');
-  
+
   let ult = ss.getSheetByName('UltimaCarga');
   if (!ult) ult = ss.insertSheet('UltimaCarga');
   ult.setFrozenRows(1);
@@ -116,14 +159,14 @@ function configurarHojas() {
   if (!rep) {
     rep = ss.insertSheet('UltimoReportado');
     rep.getRange(1, 1, 1, 12).setValues([[
-      'FECHA_HORA_REPORTE', 'USUARIO_U', 'SERIAL_EQUIPO', 'NODO', 
-      'REGION_LOCALIDAD', 'IP', 'DNI', 'EXTRA', 
+      'FECHA_HORA_REPORTE', 'USUARIO_U', 'SERIAL_EQUIPO', 'NODO',
+      'REGION_LOCALIDAD', 'IP', 'DNI', 'EXTRA',
       'SERVICIO_AFECTADO', 'INCONVENIENTE', 'MAC', 'DOMICILIO_COMPLETO'
     ]]);
   }
   rep.setFrozenRows(1);
   protegerHoja(rep, 'Solo script puede escribir');
-  
+
   let reg = ss.getSheetByName('RegistroCargas');
   if (!reg) {
     reg = ss.insertSheet('RegistroCargas');
@@ -159,7 +202,7 @@ function protegerHoja(hoja, descripcion) {
   }
 }
 
-// -------------------- APERTURA DEL DIÁLOGO --------------------
+// -------------------- APERTURA DEL DIÁLOGO DENTRO DE SHEETS --------------------
 function mostrarDialogoCarga() {
   const html = HtmlService.createHtmlOutputFromFile('Dialogo')
     .setWidth(850)
@@ -173,12 +216,12 @@ function validarEstructura(datos) {
     return { ok: false, error: 'El archivo debe tener al menos un encabezado y una fila de datos.' };
   }
   const cabecera = datos[0];
-  
+
   const requeridas = [
-    "MAC", "ABONADO", "ALTURA", "CALLE", "AREA SERVICE", "MODELO", 
+    "MAC", "ABONADO", "ALTURA", "CALLE", "AREA SERVICE", "MODELO",
     "CALI F_CPE_SCORE", "LOCALIDAD", "PROVINCIA", "IP", "TIP O_DOMIC", "NU M_SERIAL_EQUIPO"
   ];
-  
+
   for (let i = 0; i < requeridas.length; i++) {
     const idx = obtenerIndiceCabecera(cabecera, requeridas[i]);
     if (idx === -1) {
@@ -193,9 +236,9 @@ function guardarEnHistorial(datos, userCodes, userDnis, fileName) {
   const lock = LockService.getDocumentLock() || LockService.getScriptLock();
   try {
     if (lock.tryLock(15000)) {
-      const ss = getAppSpreadsheet(); // Soporta ejecuciones desde Sheet UI y desde Web App (doGet)
-      configurarHojas(); // Garantiza la existencia de hojas
-      
+      const ss = getAppSpreadsheet(); // Soporta ambas fuentes: Sheet UI y Web App URL
+      configurarHojas();
+
       const hojaHist = ss.getSheetByName('Historial');
       const hojaUltima = ss.getSheetByName('UltimaCarga');
       const hojaReportado = ss.getSheetByName('UltimoReportado');
@@ -226,7 +269,7 @@ function guardarEnHistorial(datos, userCodes, userDnis, fileName) {
       }
 
       const cabeceraArchivo = datos[0];
-      const idxDni = obtenerIndiceCabecera(cabeceraArchivo, "DNI"); // Mantenemos internamente "DNI" como id de columna
+      const idxDni = obtenerIndiceCabecera(cabeceraArchivo, "DNI");
       const idxCaliFCPE = obtenerIndiceCabecera(cabeceraArchivo, "CALI F_CPE_SCORE");
       const posModelo = obtenerIndiceCabecera(cabeceraArchivo, "MODELO");
 
@@ -253,7 +296,7 @@ function guardarEnHistorial(datos, userCodes, userDnis, fileName) {
         const fila = datosFiltrados[i];
         const modelo = posModelo !== -1 ? (fila[posModelo] || "") : "";
         const servicio = obtenerServicio(modelo);
-        
+
         let usuario = userCodes[indexReportables] || (userCodes.length > 0 ? userCodes[0] : "Desconocido");
         let dni = userDnis[indexReportables] || (idxDni !== -1 ? (fila[idxDni] || "") : "");
         indexReportables++;
@@ -262,7 +305,7 @@ function guardarEnHistorial(datos, userCodes, userDnis, fileName) {
         for (let j = 3; j < ENCABEZADOS_HISTORIAL.length; j++) {
           const hName = ENCABEZADOS_HISTORIAL[j];
           if (hName === "DNI") {
-            filaHist.push(dni); // Aquí se guarda el DNI / CUIT / CUIL
+            filaHist.push(dni);
           } else if (hName === "SERVICIO_AFECTADO") {
             filaHist.push(servicio);
           } else {
@@ -319,8 +362,8 @@ function guardarEnHistorial(datos, userCodes, userDnis, fileName) {
 
       hojaReportado.clear();
       hojaReportado.getRange(1, 1, 1, 12).setValues([[
-        'FECHA_HORA_REPORTE', 'USUARIO_U', 'SERIAL_EQUIPO', 'NODO', 
-        'REGION_LOCALIDAD', 'IP', 'DNI', 'EXTRA', 
+        'FECHA_HORA_REPORTE', 'USUARIO_U', 'SERIAL_EQUIPO', 'NODO',
+        'REGION_LOCALIDAD', 'IP', 'DNI', 'EXTRA',
         'SERVICIO_AFECTADO', 'INCONVENIENTE', 'MAC', 'DOMICILIO_COMPLETO'
       ]]);
       const filasReportadas = resultadoExterno.filasReportadas;
@@ -351,7 +394,7 @@ function guardarEnHistorial(datos, userCodes, userDnis, fileName) {
 
 // -------------------- VERSIÓN OPTIMIZADA EXTERNA --------------------
 function insertarEnEstructuraFormOptimizado(datos, userCodes, userDnis, cabeceraArchivo) {
-  const ssDestino = SpreadsheetApp.openById(SPREADSHEET_ID_LOCAL); 
+  const ssDestino = SpreadsheetApp.openById(SPREADSHEET_ID_LOCAL);
   const hojaForm = ssDestino.getSheetByName('Historico');
   if (!hojaForm) throw new Error("No se encontró la hoja de destino 'Historico'");
 
@@ -359,7 +402,7 @@ function insertarEnEstructuraFormOptimizado(datos, userCodes, userDnis, cabecera
   let contadorIgnorados = 0;
   let nodosIgnorados = {};
   const fechaNativa = new Date();
-  
+
   const idxDni = obtenerIndiceCabecera(cabeceraArchivo, "DNI");
   const idxMac = obtenerIndiceCabecera(cabeceraArchivo, "MAC");
   const idxAltura = obtenerIndiceCabecera(cabeceraArchivo, "ALTURA");
@@ -380,7 +423,7 @@ function insertarEnEstructuraFormOptimizado(datos, userCodes, userDnis, cabecera
   for (let i = 0; i < datos.length; i++) {
     const fila = datos[i];
     if (!fila || !Array.isArray(fila)) continue;
-    
+
     const mac = idxMac !== -1 ? (fila[idxMac] || "") : "";
     const altura = idxAltura !== -1 ? (fila[idxAltura] || "") : "";
     const calle = idxCalle !== -1 ? (fila[idxCalle] || "") : "";
@@ -405,7 +448,7 @@ function insertarEnEstructuraFormOptimizado(datos, userCodes, userDnis, cabecera
     }
 
     const servicioAfectado = obtenerServicio(modelo);
-    
+
     let inconveniente = "CAIDO";
     if (tipoDomicilio.trim() !== "") {
       inconveniente += ", " + tipoDomicilio.trim().toUpperCase();
