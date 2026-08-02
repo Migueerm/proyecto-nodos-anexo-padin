@@ -23,9 +23,12 @@ const MAILS_AUTORIZADOS_DEFAULT = [
   "alan.simes@konecta.com",
 ];
 
-// -------------------- ID DE LA PLANILLA DE TRABAJO --------------------
-// ID de la planilla principal para almacenamiento local (Historial, UltimaCarga, UsuariosAutorizados, etc.)
+// -------------------- ID DE PLANILLAS --------------------
+// ID de la planilla principal para almacenamiento local (Historial, UltimaCarga, etc.)
 const SPREADSHEET_ID_LOCAL = '1-TfFDqea0OkGlQrQdls_3NxMqlQrK8HMieGwPWdLvIo';
+
+// ID de la planilla para gestión de autorizaciones y lista de usuarios (MAIL | ACCESO)
+const SPREADSHEET_ID_AUTORIZACIONES = '1TEFwlV7_7A0dY5X2t8qmEFJZT3QVmCj48NPf59Izq-A';
 
 /**
  * Helper para obtener la planilla de trabajo.
@@ -42,16 +45,12 @@ function getAppSpreadsheet() {
 
 /**
  * Obtiene dinámicamente la lista de correos con acceso permitido (ACCESO = 'SI')
- * desde la hoja 'UsuariosAutorizados' de la planilla principal.
+ * desde la planilla de autorizaciones (ID: 1TEFwlV7_7A0dY5X2t8qmEFJZT3QVmCj48NPf59Izq-A).
  */
 function obtenerMailsAutorizados() {
   try {
-    const ss = getAppSpreadsheet();
-    let hojaAut = ss.getSheetByName('UsuariosAutorizados');
-    if (!hojaAut) {
-      configurarHojas();
-      hojaAut = ss.getSheetByName('UsuariosAutorizados');
-    }
+    const ssAut = SpreadsheetApp.openById(SPREADSHEET_ID_AUTORIZACIONES);
+    let hojaAut = ssAut.getSheetByName('UsuariosAutorizados') || ssAut.getSheets()[0];
     if (!hojaAut || hojaAut.getLastRow() < 2) {
       return MAILS_AUTORIZADOS_DEFAULT;
     }
@@ -66,7 +65,7 @@ function obtenerMailsAutorizados() {
     }
     return mailsPermitidos.length > 0 ? mailsPermitidos : MAILS_AUTORIZADOS_DEFAULT;
   } catch (e) {
-    Logger.log("Error al obtener correos autorizados: " + e.message);
+    Logger.log("Error al obtener correos autorizados desde ID externo: " + e.message);
     return MAILS_AUTORIZADOS_DEFAULT;
   }
 }
@@ -76,7 +75,7 @@ function doGet(e) {
   // Obtenemos el mail de la persona que está intentando abrir el link
   const usuarioActual = Session.getActiveUser().getEmail();
 
-  // Obtenemos dinámicamente los correos autorizados desde la hoja 'UsuariosAutorizados' (ACCESO = SI)
+  // Obtenemos dinámicamente los correos autorizados desde la planilla externa (ID: 1TEFwlV7_7A0dY5X2t8qmEFJZT3QVmCj48NPf59Izq-A)
   const mailsAutorizados = obtenerMailsAutorizados();
 
   // Validamos si el usuario actual está en la lista de permitidos
@@ -88,7 +87,7 @@ function doGet(e) {
       <div style="font-family: 'Inter', sans-serif; text-align: center; margin-top: 60px; color: #1e293b;">
         <h2 style="color: #dc2626;">Acceso Denegado ❌</h2>
         <p>El correo <b>${usuarioActual || "no identificado"}</b> no tiene permisos para acceder a este módulo o su acceso fue revocado.</p>
-        <p>Por favor, comunícate con el administrador para solicitar habilitación en la planilla.</p>
+        <p>Por favor, comunícate con el administrador para solicitar habilitación en la planilla de accesos.</p>
       </div>
     `).setTitle('Acceso Restringido');
   }
@@ -219,20 +218,24 @@ function configurarHojas() {
   resumen.setFrozenRows(1);
   protegerHoja(resumen, 'Solo script puede escribir');
 
-  // Configuración de Hoja de Gestión de Permisos de Usuarios
-  let aut = ss.getSheetByName('UsuariosAutorizados');
-  if (!aut) {
-    aut = ss.insertSheet('UsuariosAutorizados');
-  }
-  if (aut.getLastRow() === 0) {
-    aut.getRange(1, 1, 1, 2).setValues([['MAIL', 'ACCESO']]);
-    const filasIniciales = MAILS_AUTORIZADOS_DEFAULT.map(mail => [mail, 'SI']);
-    aut.getRange(2, 1, filasIniciales.length, 2).setValues(filasIniciales);
-  }
-  aut.setFrozenRows(1);
+  // Configurar inicialización en planilla externa de autorizaciones si es necesario
+  configurarHojaAutorizaciones();
+}
 
-  // Aplicación de desplegable (Validación de Datos) en la columna B (ACCESO)
+function configurarHojaAutorizaciones() {
   try {
+    const ssAut = SpreadsheetApp.openById(SPREADSHEET_ID_AUTORIZACIONES);
+    let aut = ssAut.getSheetByName('UsuariosAutorizados');
+    if (!aut) {
+      aut = ssAut.getSheets()[0];
+    }
+    if (aut.getLastRow() === 0) {
+      aut.getRange(1, 1, 1, 2).setValues([['MAIL', 'ACCESO']]);
+      const filasIniciales = MAILS_AUTORIZADOS_DEFAULT.map(mail => [mail, 'SI']);
+      aut.getRange(2, 1, filasIniciales.length, 2).setValues(filasIniciales);
+    }
+    aut.setFrozenRows(1);
+
     const rule = SpreadsheetApp.newDataValidation()
       .requireValueInList(['SI', 'NO'], true)
       .setAllowInvalid(false)
@@ -240,7 +243,7 @@ function configurarHojas() {
       .build();
     aut.getRange('B2:B500').setDataValidation(rule);
   } catch (e) {
-    Logger.log("Aviso en regla de desplegable UsuariosAutorizados: " + e.message);
+    Logger.log("Aviso en configurarHojaAutorizaciones: " + e.message);
   }
 }
 
@@ -294,7 +297,7 @@ function guardarEnHistorial(datos, userCodes, userDnis, fileName) {
   const lock = LockService.getDocumentLock() || LockService.getScriptLock();
   try {
     if (lock.tryLock(15000)) {
-      const ss = getAppSpreadsheet(); // Soporta ambas fuentes: Sheet UI y Web App URL
+      const ss = getAppSpreadsheet();
       configurarHojas();
 
       const hojaHist = ss.getSheetByName('Historial');

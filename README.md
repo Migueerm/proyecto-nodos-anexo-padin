@@ -1,6 +1,6 @@
 # 🚀 Proyecto Nodos TECO (Carga Masiva y Monitoreo de Nodos)
 
-Sistema de automatización en **Google Apps Script (GAS)** para la carga masiva, estandarización de reportes de servicio, mapeo de equipos, almacenamiento local/remoto, control de acceso dinámico por planilla y monitoreo automático de concentraciones/masivos en nodos de red.
+Sistema de automatización en **Google Apps Script (GAS)** para la carga masiva, estandarización de reportes de servicio, mapeo de equipos, almacenamiento local/remoto, control de acceso dinámico por planilla remota y monitoreo automático de concentraciones/masivos en nodos de red.
 
 ---
 
@@ -9,7 +9,7 @@ Sistema de automatización en **Google Apps Script (GAS)** para la carga masiva,
 ```mermaid
 flowchart TD
     A[Usuario Web / Operador] -->|Abre URL Web App| B{doGet - Control de Acceso}
-    B -->|Consulta Hoja UsuariosAutorizados| C{ACCESO = SI?}
+    B -->|Consulta Planilla Remota ID: 1TEFwlV7_7A...| C{ACCESO = SI?}
     C -->|NO / No registrado| D[Pantalla Acceso Denegado ❌]
     C -->|SI| E[Dialogo.html - Carga Masiva]
     E -->|Subida XLSX/CSV & Asignación U/DNI| F[CargaMasivaReportes.gs]
@@ -26,7 +26,7 @@ flowchart TD
 
 | Archivo | Descripción | Estado |
 | :--- | :--- | :--- |
-| **`CargaMasivaReportes.gs`** | Backend Apps Script con gestión dinámica de permisos desde la hoja `UsuariosAutorizados` (`MAIL` y desplegable `ACCESO` SI/NO), helper `getAppSpreadsheet()`, mapeo de modelos a servicios e integración concurrente con `LockService`. | **Producción** |
+| **`CargaMasivaReportes.gs`** | Backend Apps Script con gestión dinámica de permisos desde la planilla externa `1TEFwlV7_7A0dY5X2t8qmEFJZT3QVmCj48NPf59Izq-A` (`MAIL` y desplegable `ACCESO` SI/NO), helper `getAppSpreadsheet()`, mapeo de modelos a servicios e integración concurrente con `LockService`. | **Producción** |
 | **`Dialogo.html`** | Interfaz Web/Modal responsiva con animación overlay modal (`#loadingOverlay`), reseteo en caliente de formulario y validación dinámica de Identificador (DNI) y Código U. | **Producción** |
 | **`nodo.txt`** | Algoritmo de evaluación de masivos por nodo, filtrado por antigüedad (`MAX_LOOKBACK_HOURS`), deduplicación con `PropertiesService` y envío de notificaciones. | **Producción** |
 | **`ALERTAS POR NODOS (EJECUCIÓN MINU.txt`** | Configuración de triggers temporales, ventana de bloqueo nocturno (00:59–03:00) y tareas de limpieza diaria. | **Producción** |
@@ -37,8 +37,8 @@ flowchart TD
 
 ## ⚙️ Funcionalidades Clave
 
-### 1. Gestión Dinámica de Accesos desde la Planilla (`UsuariosAutorizados`)
-* Hoja administrable con 2 columnas: **`MAIL`** y **`ACCESO`** (desplegable `SI` / `NO`).
+### 1. Gestión Dinámica de Accesos desde Planilla Externa (`1TEFwlV7_7A0dY5X2t8qmEFJZT3QVmCj48NPf59Izq-A`)
+* Planilla dedicada con 2 columnas: **`MAIL`** y **`ACCESO`** (desplegable `SI` / `NO`).
 * Permite dar de alta nuevos correos agregándolos con `SI` o revocar accesos cambiando la selección a `NO`.
 * Restringe el acceso de forma inmediata al abrir la URL de la Web App.
 
@@ -57,7 +57,7 @@ flowchart TD
 * **`UltimoReportado`**: Matriz unificada de 12 columnas.
 * **`RegistroCargas`**: Bitácora de transacciones.
 * **`UltimoResumen`**: Métrica por nodo y estado.
-* **`UsuariosAutorizados`**: Control de permisos con desplegable `SI`/`NO`.
+* **Planilla de Autorizaciones (`1TEFwlV7_7A0dY5X2t8qmEFJZT3QVmCj48NPf59Izq-A`)**: Control de permisos centralizado con desplegable `SI`/`NO`.
 * **`Historico` (Externa)**: Inserción directa en la planilla principal `1-TfFDqea0OkGlQrQdls_3NxMqlQrK8HMieGwPWdLvIo`.
 
 ---
