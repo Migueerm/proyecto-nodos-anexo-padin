@@ -46,6 +46,7 @@ function getAppSpreadsheet() {
 /**
  * Obtiene dinámicamente la lista de correos con acceso permitido (ACCESO = 'SI')
  * desde la planilla de autorizaciones (ID: 1TEFwlV7_7A0dY5X2t8qmEFJZT3QVmCj48NPf59Izq-A).
+ * Función puramente de LECTURA para evitar errores de permisos.
  */
 function obtenerMailsAutorizados() {
   try {
@@ -65,7 +66,7 @@ function obtenerMailsAutorizados() {
     }
     return mailsPermitidos.length > 0 ? mailsPermitidos : MAILS_AUTORIZADOS_DEFAULT;
   } catch (e) {
-    Logger.log("Error al obtener correos autorizados desde ID externo: " + e.message);
+    Logger.log("Aviso al obtener correos autorizados desde ID externo: " + e.message);
     return MAILS_AUTORIZADOS_DEFAULT;
   }
 }
@@ -75,7 +76,7 @@ function doGet(e) {
   // Obtenemos el mail de la persona que está intentando abrir el link
   const usuarioActual = Session.getActiveUser().getEmail();
 
-  // Obtenemos dinámicamente los correos autorizados desde la planilla externa (ID: 1TEFwlV7_7A0dY5X2t8qmEFJZT3QVmCj48NPf59Izq-A)
+  // Obtenemos dinámicamente los correos autorizados desde la planilla externa
   const mailsAutorizados = obtenerMailsAutorizados();
 
   // Validamos si el usuario actual está en la lista de permitidos
@@ -217,34 +218,6 @@ function configurarHojas() {
   }
   resumen.setFrozenRows(1);
   protegerHoja(resumen, 'Solo script puede escribir');
-
-  // Configurar inicialización en planilla externa de autorizaciones si es necesario
-  configurarHojaAutorizaciones();
-}
-
-function configurarHojaAutorizaciones() {
-  try {
-    const ssAut = SpreadsheetApp.openById(SPREADSHEET_ID_AUTORIZACIONES);
-    let aut = ssAut.getSheetByName('UsuariosAutorizados');
-    if (!aut) {
-      aut = ssAut.getSheets()[0];
-    }
-    if (aut.getLastRow() === 0) {
-      aut.getRange(1, 1, 1, 2).setValues([['MAIL', 'ACCESO']]);
-      const filasIniciales = MAILS_AUTORIZADOS_DEFAULT.map(mail => [mail, 'SI']);
-      aut.getRange(2, 1, filasIniciales.length, 2).setValues(filasIniciales);
-    }
-    aut.setFrozenRows(1);
-
-    const rule = SpreadsheetApp.newDataValidation()
-      .requireValueInList(['SI', 'NO'], true)
-      .setAllowInvalid(false)
-      .setHelpText('Seleccione "SI" para otorgar acceso o "NO" para revocarlo.')
-      .build();
-    aut.getRange('B2:B500').setDataValidation(rule);
-  } catch (e) {
-    Logger.log("Aviso en configurarHojaAutorizaciones: " + e.message);
-  }
 }
 
 function protegerHoja(hoja, descripcion) {
@@ -298,14 +271,33 @@ function guardarEnHistorial(datos, userCodes, userDnis, fileName) {
   try {
     if (lock.tryLock(15000)) {
       const ss = getAppSpreadsheet();
-      configurarHojas();
 
-      const hojaHist = ss.getSheetByName('Historial');
-      const hojaUltima = ss.getSheetByName('UltimaCarga');
-      const hojaReportado = ss.getSheetByName('UltimoReportado');
-      const hojaReg = ss.getSheetByName('RegistroCargas');
-      const hojaResumen = ss.getSheetByName('UltimoResumen');
-      if (!hojaHist || !hojaUltima || !hojaReportado || !hojaReg || !hojaResumen) throw new Error('Faltan hojas del sistema.');
+      let hojaHist = ss.getSheetByName('Historial');
+      let hojaUltima = ss.getSheetByName('UltimaCarga');
+      let hojaReportado = ss.getSheetByName('UltimoReportado');
+      let hojaReg = ss.getSheetByName('RegistroCargas');
+      let hojaResumen = ss.getSheetByName('UltimoResumen');
+
+      if (!hojaHist) {
+        hojaHist = ss.insertSheet('Historial');
+        hojaHist.setFrozenRows(1);
+      }
+      if (!hojaUltima) {
+        hojaUltima = ss.insertSheet('UltimaCarga');
+        hojaUltima.setFrozenRows(1);
+      }
+      if (!hojaReportado) {
+        hojaReportado = ss.insertSheet('UltimoReportado');
+        hojaReportado.setFrozenRows(1);
+      }
+      if (!hojaReg) {
+        hojaReg = ss.insertSheet('RegistroCargas');
+        hojaReg.setFrozenRows(1);
+      }
+      if (!hojaResumen) {
+        hojaResumen = ss.insertSheet('UltimoResumen');
+        hojaResumen.setFrozenRows(1);
+      }
 
       let userEmail = '';
       try {
@@ -387,13 +379,21 @@ function guardarEnHistorial(datos, userCodes, userDnis, fileName) {
           .setValues(filasAGuardar);
       }
 
-      hojaUltima.clear();
-      hojaUltima.getRange(1, 1, 1, ENCABEZADOS_HISTORIAL.length).setValues([ENCABEZADOS_HISTORIAL]);
+      // Limpieza segura sin destruir estructuras de tablas o tipos de columna (clearContent)
+      if (hojaUltima.getLastRow() > 1) {
+        hojaUltima.getRange(2, 1, hojaUltima.getLastRow() - 1, hojaUltima.getLastColumn()).clearContent();
+      }
+      if (hojaUltima.getLastRow() === 0) {
+        hojaUltima.getRange(1, 1, 1, ENCABEZADOS_HISTORIAL.length).setValues([ENCABEZADOS_HISTORIAL]);
+      }
       if (filasAGuardar.length > 0) {
         hojaUltima.getRange(2, 1, filasAGuardar.length, filasAGuardar[0].length)
           .setValues(filasAGuardar);
       }
 
+      if (hojaReg.getLastRow() === 0) {
+        hojaReg.getRange(1, 1, 1, 6).setValues([['Fecha/Hora', 'Usuario', 'Mail', 'Archivo', 'Cantidad Registros', 'Estado']]);
+      }
       hojaReg.appendRow([fechaHoraStr, userCodes.slice(0, 5).join(', ') + (userCodes.length > 5 ? '...' : ''), userEmail, fileName || 'Archivo Cargado', filasAGuardar.length, 'OK']);
 
       const idxNodo = obtenerIndiceCabecera(cabeceraArchivo, "AREA SERVICE");
@@ -413,20 +413,28 @@ function guardarEnHistorial(datos, userCodes, userDnis, fileName) {
         })
         .sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
 
-      hojaResumen.clear();
-      hojaResumen.getRange(1, 1, 1, 3).setValues([['NODO', 'ESTADO', 'CANTIDAD']]);
+      if (hojaResumen.getLastRow() > 1) {
+        hojaResumen.getRange(2, 1, hojaResumen.getLastRow() - 1, hojaResumen.getLastColumn()).clearContent();
+      }
+      if (hojaResumen.getLastRow() === 0) {
+        hojaResumen.getRange(1, 1, 1, 3).setValues([['AREA SERVICE', 'CALI F_CPE_SCORE', 'Cantidad']]);
+      }
       if (filasResumen.length > 0) {
         hojaResumen.getRange(2, 1, filasResumen.length, 3).setValues(filasResumen);
       }
 
       const resultadoExterno = insertarEnEstructuraFormOptimizado(datosFiltrados, userCodes, userDnis, cabeceraArchivo);
 
-      hojaReportado.clear();
-      hojaReportado.getRange(1, 1, 1, 12).setValues([[
-        'FECHA_HORA_REPORTE', 'USUARIO_U', 'SERIAL_EQUIPO', 'NODO',
-        'REGION_LOCALIDAD', 'IP', 'DNI', 'EXTRA',
-        'SERVICIO_AFECTADO', 'INCONVENIENTE', 'MAC', 'DOMICILIO_COMPLETO'
-      ]]);
+      if (hojaReportado.getLastRow() > 1) {
+        hojaReportado.getRange(2, 1, hojaReportado.getLastRow() - 1, hojaReportado.getLastColumn()).clearContent();
+      }
+      if (hojaReportado.getLastRow() === 0) {
+        hojaReportado.getRange(1, 1, 1, 12).setValues([[
+          'FECHA_HORA_REPORTE', 'USUARIO_U', 'SERIAL_EQUIPO', 'NODO',
+          'REGION_LOCALIDAD', 'IP', 'DNI', 'EXTRA',
+          'SERVICIO_AFECTADO', 'INCONVENIENTE', 'MAC', 'DOMICILIO_COMPLETO'
+        ]]);
+      }
       const filasReportadas = resultadoExterno.filasReportadas;
       if (filasReportadas && filasReportadas.length > 0) {
         const filasAMostrar = filasReportadas.map(fila => {
@@ -529,9 +537,13 @@ function insertarEnEstructuraFormOptimizado(datos, userCodes, userDnis, cabecera
   if (filasAInsertar.length > 0) {
     const ultFila = hojaForm.getLastRow();
     const filaInicio = ultFila + 1;
-    const filasNecesarias = filaInicio + filasAInsertar.length - hojaForm.getMaxRows();
-    if (filasNecesarias > 0) {
-      hojaForm.insertRowsAfter(hojaForm.getMaxRows(), filasNecesarias + 5);
+    try {
+      const filasNecesarias = filaInicio + filasAInsertar.length - hojaForm.getMaxRows();
+      if (filasNecesarias > 0) {
+        hojaForm.insertRowsAfter(hojaForm.getMaxRows(), filasNecesarias + 5);
+      }
+    } catch (e) {
+      Logger.log("Aviso insertRowsAfter: " + e.message);
     }
     hojaForm.getRange(filaInicio, 1, filasAInsertar.length, filasAInsertar[0].length)
             .setValues(filasAInsertar);
