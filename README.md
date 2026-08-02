@@ -1,6 +1,6 @@
 # 🚀 Proyecto Nodos TECO (Carga Masiva y Monitoreo de Nodos)
 
-Sistema de automatización en **Google Apps Script (GAS)** para la carga masiva, estandarización de reportes de servicio, mapeo de equipos, almacenamiento local/remoto, control de acceso por lista blanca y monitoreo automático de concentraciones/masivos en nodos de red.
+Sistema de automatización en **Google Apps Script (GAS)** para la carga masiva, estandarización de reportes de servicio, mapeo de equipos, almacenamiento local/remoto, control de acceso dinámico por planilla y monitoreo automático de concentraciones/masivos en nodos de red.
 
 ---
 
@@ -9,14 +9,15 @@ Sistema de automatización en **Google Apps Script (GAS)** para la carga masiva,
 ```mermaid
 flowchart TD
     A[Usuario Web / Operador] -->|Abre URL Web App| B{doGet - Control de Acceso}
-    B -->|Correo NO en MAILS_AUTORIZADOS| C[Pantalla Acceso Denegado ❌]
-    B -->|Correo Autorizado| D[Dialogo.html - Carga Masiva]
-    D -->|Subida XLSX/CSV & Asignación U/DNI| E[CargaMasivaReportes.gs]
-    E -->|Normaliza cabeceras & mapea SERVICIO_MAP| F[LockService & Guardado]
-    F -->|Guarda localmente| G[(Hojas: Historial, UltimaCarga, UltimoReportado, etc.)]
-    F -->|Inserta remotamente| H[(Google Sheet Historico ID: 1-TfFDqea0Ok...)]
-    H -->|Evaluación cada 1 min| I[ALERTAS POR NODOS / nodo.txt]
-    I -->|Detecta masivo >= 5 reportes| J[Notificación MailApp a Operaciones]
+    B -->|Consulta Hoja UsuariosAutorizados| C{ACCESO = SI?}
+    C -->|NO / No registrado| D[Pantalla Acceso Denegado ❌]
+    C -->|SI| E[Dialogo.html - Carga Masiva]
+    E -->|Subida XLSX/CSV & Asignación U/DNI| F[CargaMasivaReportes.gs]
+    F -->|Normaliza cabeceras & mapea SERVICIO_MAP| G[LockService & Guardado]
+    G -->|Guarda localmente| H[(Hojas: Historial, UltimaCarga, UltimoReportado, etc.)]
+    G -->|Inserta remotamente| I[(Google Sheet Historico ID: 1-TfFDqea0Ok...)]
+    I -->|Evaluación cada 1 min| J[ALERTAS POR NODOS / nodo.txt]
+    J -->|Detecta masivo >= 5 reportes| K[Notificación MailApp a Operaciones]
 ```
 
 ---
@@ -25,7 +26,7 @@ flowchart TD
 
 | Archivo | Descripción | Estado |
 | :--- | :--- | :--- |
-| **`CargaMasivaReportes.gs`** | Backend Apps Script con control de acceso por lista blanca (`MAILS_AUTORIZADOS`), helper `getAppSpreadsheet()`, mapeo de modelos a servicios (`Internet HFC`, `Flow`, `Internet FTTH`) y guardado concurrente con `LockService`. | **Producción** |
+| **`CargaMasivaReportes.gs`** | Backend Apps Script con gestión dinámica de permisos desde la hoja `UsuariosAutorizados` (`MAIL` y desplegable `ACCESO` SI/NO), helper `getAppSpreadsheet()`, mapeo de modelos a servicios e integración concurrente con `LockService`. | **Producción** |
 | **`Dialogo.html`** | Interfaz Web/Modal responsiva con animación overlay modal (`#loadingOverlay`), reseteo en caliente de formulario y validación dinámica de Identificador (DNI) y Código U. | **Producción** |
 | **`nodo.txt`** | Algoritmo de evaluación de masivos por nodo, filtrado por antigüedad (`MAX_LOOKBACK_HOURS`), deduplicación con `PropertiesService` y envío de notificaciones. | **Producción** |
 | **`ALERTAS POR NODOS (EJECUCIÓN MINU.txt`** | Configuración de triggers temporales, ventana de bloqueo nocturno (00:59–03:00) y tareas de limpieza diaria. | **Producción** |
@@ -36,9 +37,10 @@ flowchart TD
 
 ## ⚙️ Funcionalidades Clave
 
-### 1. Control de Acceso por Lista Blanca (`MAILS_AUTORIZADOS`)
-* Restringe el acceso a la Web App verificando el mail del usuario (`Session.getActiveUser().getEmail()`).
-* Bloquea a usuarios no autorizados antes de cargar la interfaz, retornando un aviso de acceso restringido.
+### 1. Gestión Dinámica de Accesos desde la Planilla (`UsuariosAutorizados`)
+* Hoja administrable con 2 columnas: **`MAIL`** y **`ACCESO`** (desplegable `SI` / `NO`).
+* Permite dar de alta nuevos correos agregándolos con `SI` o revocar accesos cambiando la selección a `NO`.
+* Restringe el acceso de forma inmediata al abrir la URL de la Web App.
 
 ### 2. Overlay Modal y Reseteo sin Recargar
 * Ventana modal flotante con estado visual animado durante la subida e integración de datos.
@@ -55,6 +57,7 @@ flowchart TD
 * **`UltimoReportado`**: Matriz unificada de 12 columnas.
 * **`RegistroCargas`**: Bitácora de transacciones.
 * **`UltimoResumen`**: Métrica por nodo y estado.
+* **`UsuariosAutorizados`**: Control de permisos con desplegable `SI`/`NO`.
 * **`Historico` (Externa)**: Inserción directa en la planilla principal `1-TfFDqea0OkGlQrQdls_3NxMqlQrK8HMieGwPWdLvIo`.
 
 ---

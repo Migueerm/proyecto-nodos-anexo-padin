@@ -1,6 +1,6 @@
-// -------------------- LISTA BLANCA DE CORREOS --------------------
-// Coloca aquí los correos de las personas autorizadas (en minúsculas)
-const MAILS_AUTORIZADOS = [
+// -------------------- LISTA DE CORREOS (FALLBACK Y POBLACIÓN INICIAL) --------------------
+// Correos por defecto en caso de inicialización o fallo de lectura de la hoja
+const MAILS_AUTORIZADOS_DEFAULT = [
   "miguel.rojasm@konecta.com",       // Siempre inclúyete a ti mismo
   "lautaro.padin@konecta.com",
   "ailen.vosahlo@konecta.com",
@@ -24,7 +24,7 @@ const MAILS_AUTORIZADOS = [
 ];
 
 // -------------------- ID DE LA PLANILLA DE TRABAJO --------------------
-// ID de la planilla principal para almacenamiento local (Historial, UltimaCarga, etc.)
+// ID de la planilla principal para almacenamiento local (Historial, UltimaCarga, UsuariosAutorizados, etc.)
 const SPREADSHEET_ID_LOCAL = '1-TfFDqea0OkGlQrQdls_3NxMqlQrK8HMieGwPWdLvIo';
 
 /**
@@ -40,26 +40,60 @@ function getAppSpreadsheet() {
   return SpreadsheetApp.openById(SPREADSHEET_ID_LOCAL);
 }
 
-// -------------------- DESPLIEGUE WEB APP CON CONTROL DE ACCESO --------------------
+/**
+ * Obtiene dinámicamente la lista de correos con acceso permitido (ACCESO = 'SI')
+ * desde la hoja 'UsuariosAutorizados' de la planilla principal.
+ */
+function obtenerMailsAutorizados() {
+  try {
+    const ss = getAppSpreadsheet();
+    let hojaAut = ss.getSheetByName('UsuariosAutorizados');
+    if (!hojaAut) {
+      configurarHojas();
+      hojaAut = ss.getSheetByName('UsuariosAutorizados');
+    }
+    if (!hojaAut || hojaAut.getLastRow() < 2) {
+      return MAILS_AUTORIZADOS_DEFAULT;
+    }
+    const datos = hojaAut.getRange(2, 1, hojaAut.getLastRow() - 1, 2).getValues();
+    const mailsPermitidos = [];
+    for (let i = 0; i < datos.length; i++) {
+      const mail = String(datos[i][0] || '').trim().toLowerCase();
+      const acceso = String(datos[i][1] || '').trim().toUpperCase();
+      if (mail !== '' && acceso === 'SI') {
+        mailsPermitidos.push(mail);
+      }
+    }
+    return mailsPermitidos.length > 0 ? mailsPermitidos : MAILS_AUTORIZADOS_DEFAULT;
+  } catch (e) {
+    Logger.log("Error al obtener correos autorizados: " + e.message);
+    return MAILS_AUTORIZADOS_DEFAULT;
+  }
+}
+
+// -------------------- DESPLIEGUE WEB APP CON CONTROL DE ACCESO DINÁMICO --------------------
 function doGet(e) {
   // Obtenemos el mail de la persona que está intentando abrir el link
   const usuarioActual = Session.getActiveUser().getEmail();
 
+  // Obtenemos dinámicamente los correos autorizados desde la hoja 'UsuariosAutorizados' (ACCESO = SI)
+  const mailsAutorizados = obtenerMailsAutorizados();
+
   // Validamos si el usuario actual está en la lista de permitidos
-  const estaAutorizado = MAILS_AUTORIZADOS.some(mail => mail.toLowerCase() === usuarioActual.toLowerCase());
+  const estaAutorizado = mailsAutorizados.some(mail => mail.toLowerCase() === usuarioActual.toLowerCase());
 
   if (!estaAutorizado) {
-    // Si NO está en la lista, mostramos un mensaje de error y NO cargamos el HTML
+    // Si NO está en la lista o su acceso está en NO, mostramos mensaje de error y NO cargamos el HTML
     return HtmlService.createHtmlOutput(`
       <div style="font-family: 'Inter', sans-serif; text-align: center; margin-top: 60px; color: #1e293b;">
         <h2 style="color: #dc2626;">Acceso Denegado ❌</h2>
-        <p>El correo <b>${usuarioActual || "no identificado"}</b> no tiene permisos para acceder a este módulo.</p>
-        <p>Por favor, comunícate con el administrador para solicitar acceso.</p>
+        <p>El correo <b>${usuarioActual || "no identificado"}</b> no tiene permisos para acceder a este módulo o su acceso fue revocado.</p>
+        <p>Por favor, comunícate con el administrador para solicitar habilitación en la planilla.</p>
       </div>
     `).setTitle('Acceso Restringido');
   }
 
-  // Si SÍ está en la lista, le mostramos el formulario normalmente
+  // Si SÍ está en la lista con acceso 'SI', le mostramos el formulario normalmente
   return HtmlService.createHtmlOutputFromFile('Dialogo')
     .setTitle('📤 Carga Masiva de Reporte')
     .setFaviconUrl('https://www.google.com/favicon.ico')
@@ -184,6 +218,30 @@ function configurarHojas() {
   }
   resumen.setFrozenRows(1);
   protegerHoja(resumen, 'Solo script puede escribir');
+
+  // Configuración de Hoja de Gestión de Permisos de Usuarios
+  let aut = ss.getSheetByName('UsuariosAutorizados');
+  if (!aut) {
+    aut = ss.insertSheet('UsuariosAutorizados');
+  }
+  if (aut.getLastRow() === 0) {
+    aut.getRange(1, 1, 1, 2).setValues([['MAIL', 'ACCESO']]);
+    const filasIniciales = MAILS_AUTORIZADOS_DEFAULT.map(mail => [mail, 'SI']);
+    aut.getRange(2, 1, filasIniciales.length, 2).setValues(filasIniciales);
+  }
+  aut.setFrozenRows(1);
+
+  // Aplicación de desplegable (Validación de Datos) en la columna B (ACCESO)
+  try {
+    const rule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(['SI', 'NO'], true)
+      .setAllowInvalid(false)
+      .setHelpText('Seleccione "SI" para otorgar acceso o "NO" para revocarlo.')
+      .build();
+    aut.getRange('B2:B500').setDataValidation(rule);
+  } catch (e) {
+    Logger.log("Aviso en regla de desplegable UsuariosAutorizados: " + e.message);
+  }
 }
 
 function protegerHoja(hoja, descripcion) {

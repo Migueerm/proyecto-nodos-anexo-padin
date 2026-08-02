@@ -1,6 +1,6 @@
 # 📚 Documentación Técnica Completa - Proyecto Nodos TECO
 
-Este documento contiene la especificación técnica completa, la guía de seguridad/control de acceso, la arquitectura de interfaz y la referencia de despliegue para la versión de producción validada del **Módulo de Carga Masiva de Reportes de Nodos**.
+Este documento contiene la especificación técnica completa, la guía de seguridad/control de acceso dinámico, la arquitectura de interfaz y la referencia de despliegue para la versión de producción validada del **Módulo de Carga Masiva de Reportes de Nodos**.
 
 ---
 
@@ -9,7 +9,7 @@ Este documento contiene la especificación técnica completa, la guía de seguri
 ```
 proyecto nodos teco/
 │
-├── CargaMasivaReportes.gs     --> Backend Apps Script con control de acceso y lógica de persistencia
+├── CargaMasivaReportes.gs     --> Backend Apps Script con gestión dinámica de accesos (Hoja UsuariosAutorizados)
 ├── Dialogo.html               --> Interfaz Web/Modal responsiva con overlay dinámico e ingesta de datos
 ├── nodo.txt                   --> Algoritmo de monitoreo y alertas por nodo
 ├── ALERTAS POR NODOS...txt    --> Triggers de ejecución en minutos pares y bloqueos nocturnos
@@ -19,40 +19,20 @@ proyecto nodos teco/
 
 ---
 
-## 🔒 2. Control de Acceso y Lista Blanca de Correos (`MAILS_AUTORIZADOS`)
+## 🔒 2. Control de Acceso Dinámico desde Google Sheets (`UsuariosAutorizados`)
 
-En el punto de entrada web (`doGet`), el sistema implementa una capa de seguridad basada en lista blanca de correos electrónicos autorizados (`@konecta.com`).
+En el punto de entrada web (`doGet`), el sistema implementa una capa de seguridad administrable dinámicamente desde la hoja **`UsuariosAutorizados`** en la planilla principal.
+
+### Estructura de la Hoja `UsuariosAutorizados`:
+- **Columna A (`MAIL`)**: Correo electrónico del usuario (ej. `nombre.apellido@konecta.com`).
+- **Columna B (`ACCESO`)**: Menú desplegable con validación de datos estricta (`SI` / `NO`).
 
 ### Funcionamiento:
 1. Obtenemos el correo del usuario activo a través de `Session.getActiveUser().getEmail()`.
-2. Validamos la coincidencia (sin distinguir mayúsculas/minúsculas) contra el arreglo `MAILS_AUTORIZADOS`.
-3. **Usuario NO Autorizado**: Se retorna una pantalla estandarizada de **"Acceso Denegado ❌"** informando que el correo no tiene permisos y deteniendo la renderización del formulario.
-4. **Usuario Autorizado**: Se renderiza la plantilla `Dialogo.html` en modo Web App o Modal Dialog.
-
-```javascript
-const MAILS_AUTORIZADOS = [
-  "miguel.rojasm@konecta.com",
-  "lautaro.padin@konecta.com",
-  "ailen.vosahlo@konecta.com",
-  "camila.magnaterra@konecta.com",
-  "daniel.bravo@konecta.com",
-  "elias.stessens@konecta.com",
-  "franco.alegranza@konecta.com",
-  "ivan.mora@konecta.com",
-  "ivana.piutri@konecta.com",
-  "jonatan.vazquez@konecta.com",
-  "juan.barboza@konecta.com",
-  "karen.morales@konecta.com",
-  "kevin.arce@konecta.com",
-  "lourdes.villarreal@konecta.com",
-  "nicolas.andrada@konecta.com",
-  "octavio.nunez@konecta.com",
-  "rociot.diaz@konecta.com",
-  "sergio.gragera@konecta.com",
-  "tomas.arroyo@konecta.com",
-  "alan.simes@konecta.com"
-];
-```
+2. La función `obtenerMailsAutorizados()` lee en tiempo real la hoja `UsuariosAutorizados` y filtra únicamente los correos cuyo campo **`ACCESO` sea igual a `SI`**.
+3. **Otorgar Acceso**: El administrador agrega una nueva fila en la planilla con el mail del usuario y selecciona **`SI`** en el desplegable.
+4. **Revocar Acceso**: El administrador modifica la columna B a **`NO`** (o elimina la fila). El usuario pierde el acceso inmediatamente al abrir la URL.
+5. **Usuario NO Autorizado**: Se retorna una pantalla estandarizada de **"Acceso Denegado ❌"** informando que el correo no está habilitado.
 
 ---
 
@@ -90,6 +70,7 @@ La interfaz HTML5 implementa las siguientes mejoras de UX/UI en producción:
    - **`UltimoReportado`**: Matriz simplificada de 12 columnas enviada a la hoja de destino.
    - **`RegistroCargas`**: Bitácora con timestamp, usuario, mail, archivo y total de filas.
    - **`UltimoResumen`**: Conteo consolidado de incidencias por `NODO` (`AREA SERVICE`) y `ESTADO`.
+   - **`UsuariosAutorizados`**: Tabla de gestión dinámica de accesos con lista blanca y desplegable `SI`/`NO`.
 
 4. **Escritura Remota en Hoja `Historico`**:
    - Abre la planilla principal definida por `SPREADSHEET_ID_LOCAL` e inserta los registros formateados en la hoja `Historico`.
@@ -105,7 +86,7 @@ La interfaz HTML5 implementa las siguientes mejoras de UX/UI en producción:
    - **Ejecutar como**: *Tu cuenta de usuario*.
    - **Quién tiene acceso**: *Cualquier persona dentro de la organización*.
 4. Hacer clic en **Desplegar** y copiar la URL Web App (`.../exec`).
-5. La URL verificará automáticamente el correo del usuario contra `MAILS_AUTORIZADOS`.
+5. La URL verificará automáticamente el correo del usuario contra la hoja `UsuariosAutorizados`.
 
 ### Opción B: Menú en Google Sheets
 1. Al abrir la planilla vinculada, el activador `onOpen()` crea el menú superior **`📤 Carga de archivos > 📄 Subir archivo`**.
