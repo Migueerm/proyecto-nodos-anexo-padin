@@ -30,12 +30,12 @@ const CONFIG = {
   // Correos: reemplazá por quienes deben recibir las alertas
   CORREOS: {
     TO: [
-      "miguel.rojasm@konecta.com",
+      "miguel.rojas@ejemplo.com",
       "rojas.miguel018@gmail.com",
-      "stestructurako@konecta.com",
-      "sergio.gragera@konecta.com",
-      "gustavo.astudillo@konecta.com",
-      "tomas.nievas@konecta.com"
+      "contacto@ejemplo.com",
+      "contacto@ejemplo.com",
+      "contacto@ejemplo.com",
+      "contacto@ejemplo.com"
     ],
     CC: [],
     BCC: ["rojas.miguel018@gmail.com"]
